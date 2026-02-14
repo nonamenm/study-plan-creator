@@ -1,7 +1,10 @@
 import { useState, useMemo } from 'react'
+import { generateStudyPlan } from '../utils/studyPlanGenerator'
+import StudyPlanDisplay from './StudyPlanDisplay'
 
 function StudyPlanForm() {
   // Form state
+  const [currentStep, setCurrentStep] = useState(1) // 1 = Basic Info, 2 = Materials
   const [numberOfSubjects, setNumberOfSubjects] = useState('')
   const [subjects, setSubjects] = useState([])
   const [newSubjectName, setNewSubjectName] = useState('')
@@ -10,6 +13,7 @@ function StudyPlanForm() {
   const [dailyHours, setDailyHours] = useState('')
   const [learningStyle, setLearningStyle] = useState('')
   const [errors, setErrors] = useState({})
+  const [studyPlan, setStudyPlan] = useState(null)
 
   // Get available priorities (priorities not yet assigned)
   const availablePriorities = useMemo(() => {
@@ -107,7 +111,8 @@ function StudyPlanForm() {
       id: Date.now(), // Simple ID generation
       name: newSubjectName.trim(),
       priority: priorityNum,
-      examDates: sortedExamDates // Store as array
+      examDates: sortedExamDates, // Store as array
+      materials: [] // Array to store study materials/topics as objects {name, estimatedMinutes}
     }
 
     // Update subjects
@@ -198,16 +203,56 @@ function StudyPlanForm() {
 
     setErrors(newErrors)
 
-    // If no errors, proceed (for now just log - Phase 2 will generate plan)
+    // If no errors, generate study plan
     if (Object.keys(newErrors).length === 0) {
-      console.log('Form submitted:', {
-        subjects,
-        dailyHours: parseFloat(dailyHours),
-        learningStyle
-      })
-      // TODO: Generate study plan (Phase 2)
-      alert('Form is valid! Study plan generation will be implemented in Phase 2.')
+      try {
+        const plan = generateStudyPlan(
+          subjects,
+          parseInt(numberOfSubjects),
+          parseFloat(dailyHours)
+        )
+        setStudyPlan(plan)
+        // Scroll to top to show the plan
+        window.scrollTo({ top: 0, behavior: 'smooth' })
+      } catch (error) {
+        setErrors({ ...newErrors, general: error.message || 'Failed to generate study plan. Please check your inputs.' })
+      }
     }
+  }
+
+  // Handle updating subjects from the plan display
+  const handleUpdateSubjects = (updatedSubjects) => {
+    // Update the form's subjects state
+    setSubjects(updatedSubjects)
+  }
+
+  // Handle refreshing the plan (regenerates with current subjects)
+  const handleRefreshPlan = () => {
+    try {
+      const plan = generateStudyPlan(
+        subjects,
+        parseInt(numberOfSubjects),
+        parseFloat(dailyHours)
+      )
+      setStudyPlan(plan)
+      // Scroll to top to show updated plan
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    } catch (error) {
+      console.error('Error refreshing study plan:', error)
+      setErrors({ general: 'Failed to refresh study plan. Please check your inputs.' })
+    }
+  }
+
+  // If plan is generated, show the plan display
+  if (studyPlan) {
+    return (
+      <StudyPlanDisplay
+        studyPlan={studyPlan}
+        onBack={() => setStudyPlan(null)}
+        onUpdateSubjects={handleUpdateSubjects}
+        onRefreshPlan={handleRefreshPlan}
+      />
+    )
   }
 
   // Get priority badge color based on priority number and total subjects
@@ -229,9 +274,62 @@ function StudyPlanForm() {
     }
   }
 
+  // Validate step 1 before moving to step 2
+  const validateStep1 = () => {
+    const newErrors = {}
+    
+    if (!numberOfSubjects || parseInt(numberOfSubjects) <= 0) {
+      newErrors.numberOfSubjects = 'Please specify number of subjects'
+    }
+    
+    if (subjects.length === 0) {
+      newErrors.subjects = 'Please add at least one subject'
+    }
+    
+    if (!dailyHours || parseFloat(dailyHours) <= 0) {
+      newErrors.dailyHours = 'Daily study hours must be greater than 0'
+    }
+    
+    setErrors(newErrors)
+    return Object.keys(newErrors).length === 0
+  }
+  
+  // Handle moving to next step
+  const handleNextStep = () => {
+    if (validateStep1()) {
+      setCurrentStep(2)
+      setErrors({}) // Clear errors when moving forward
+    }
+  }
+  
+  // Handle moving back to previous step
+  const handleBackStep = () => {
+    setCurrentStep(1)
+    setErrors({})
+  }
+
   return (
     <form onSubmit={handleSubmit} className="bg-white rounded-lg shadow-lg p-6 md:p-8">
-      {/* Number of Subjects Section */}
+      {/* Progress Indicator */}
+      <div className="mb-6">
+        <div className="flex items-center justify-between mb-2">
+          <div className={`flex-1 text-center py-2 ${currentStep === 1 ? 'bg-blue-100 text-blue-800 font-semibold' : 'bg-gray-100 text-gray-600'} rounded-lg transition-colors`}>
+            Step 1: Basic Information
+          </div>
+          <div className="w-4"></div>
+          <div className={`flex-1 text-center py-2 ${currentStep === 2 ? 'bg-blue-100 text-blue-800 font-semibold' : 'bg-gray-100 text-gray-600'} rounded-lg transition-colors`}>
+            Step 2: Study Materials
+          </div>
+        </div>
+        <div className="text-xs text-gray-500 text-center mt-1">
+          {currentStep === 1 ? 'Add your subjects and exam dates' : 'Add topics and time estimates for each subject'}
+        </div>
+      </div>
+
+      {/* Step 1: Basic Information */}
+      {currentStep === 1 && (
+        <div className="space-y-6">
+          {/* Number of Subjects Section */}
       <div className="mb-6">
         <label htmlFor="numberOfSubjects" className="block text-lg font-semibold text-gray-700 mb-2">
           Number of Subjects <span className="text-red-500">*</span>
@@ -497,62 +595,231 @@ function StudyPlanForm() {
         )}
       </div>
 
-      {/* Daily Hours Section */}
-      <div className="mb-6">
-        <label htmlFor="dailyHours" className="block text-lg font-semibold text-gray-700 mb-2">
-          Daily Study Time (hours) <span className="text-red-500">*</span>
-        </label>
-        <input
-          type="number"
-          id="dailyHours"
-          value={dailyHours}
-          onChange={(e) => {
-            setDailyHours(e.target.value)
-            setErrors({ ...errors, dailyHours: '' })
-          }}
-          min="0.5"
-          max="24"
-          step="0.5"
-          placeholder="e.g., 2.5"
-          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-        />
-        {errors.dailyHours && (
-          <p className="text-red-500 text-sm mt-1">{errors.dailyHours}</p>
-        )}
-        <p className="text-gray-500 text-sm mt-1">
-          How many hours can you study per day?
-        </p>
-      </div>
+          {/* Daily Hours Section */}
+          <div className="mb-6">
+            <label htmlFor="dailyHours" className="block text-lg font-semibold text-gray-700 mb-2">
+              Daily Study Time (hours) <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="number"
+              id="dailyHours"
+              value={dailyHours}
+              onChange={(e) => {
+                setDailyHours(e.target.value)
+                setErrors({ ...errors, dailyHours: '' })
+              }}
+              min="0.5"
+              max="24"
+              step="0.5"
+              placeholder="e.g., 2.5"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+            {errors.dailyHours && (
+              <p className="text-red-500 text-sm mt-1">{errors.dailyHours}</p>
+            )}
+            <p className="text-gray-500 text-sm mt-1">
+              How many hours can you study per day?
+            </p>
+          </div>
 
-      {/* Learning Style Section (Optional) */}
-      <div className="mb-6">
-        <label htmlFor="learningStyle" className="block text-lg font-semibold text-gray-700 mb-2">
-          Learning Style <span className="text-gray-400 text-sm">(Optional)</span>
-        </label>
-        <select
-          id="learningStyle"
-          value={learningStyle}
-          onChange={(e) => setLearningStyle(e.target.value)}
-          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-        >
-          <option value="">Select your learning style</option>
-          <option value="Visual">Visual (learn by seeing)</option>
-          <option value="Auditory">Auditory (learn by hearing)</option>
-          <option value="Reading/Writing">Reading/Writing (learn by reading/writing)</option>
-          <option value="Kinesthetic">Kinesthetic (learn by doing)</option>
-        </select>
-        <p className="text-gray-500 text-sm mt-1">
-          This will be used for future study method suggestions
-        </p>
-      </div>
+          {/* Learning Style Section (Optional) */}
+          <div className="mb-6">
+            <label htmlFor="learningStyle" className="block text-lg font-semibold text-gray-700 mb-2">
+              Learning Style <span className="text-gray-400 text-sm">(Optional)</span>
+            </label>
+            <select
+              id="learningStyle"
+              value={learningStyle}
+              onChange={(e) => setLearningStyle(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              <option value="">Select your learning style</option>
+              <option value="Visual">Visual (learn by seeing)</option>
+              <option value="Auditory">Auditory (learn by hearing)</option>
+              <option value="Reading/Writing">Reading/Writing (learn by reading/writing)</option>
+              <option value="Kinesthetic">Kinesthetic (learn by doing)</option>
+            </select>
+            <p className="text-gray-500 text-sm mt-1">
+              This will be used for future study method suggestions
+            </p>
+          </div>
 
-      {/* Submit Button */}
-      <button
-        type="submit"
-        className="w-full py-3 bg-indigo-600 text-white rounded-lg font-semibold text-lg hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-colors"
-      >
-        Generate Study Plan
-      </button>
+          {/* Next Button for Step 1 */}
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={handleNextStep}
+              className="px-8 py-3 bg-indigo-600 text-white rounded-lg font-semibold text-lg hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-colors"
+            >
+              Next: Add Materials →
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Step 2: Study Materials */}
+      {currentStep === 2 && (
+        <div className="space-y-6">
+          <div className="mb-4">
+            <h2 className="text-xl font-semibold text-gray-800 mb-2">Add Study Materials & Topics</h2>
+            <p className="text-gray-600 text-sm">
+              For each subject, add the topics you need to study. You can optionally specify how long each topic takes.
+            </p>
+          </div>
+
+          {/* Subjects List with Materials */}
+          {subjects.length > 0 ? (
+            <div className="space-y-4">
+              {subjects.map((subject) => {
+                const subjectExamDates = subject.examDates || []
+                
+                return (
+                  <div key={subject.id} className="p-4 border border-gray-300 rounded-lg bg-gray-50">
+                    {/* Subject Header */}
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-3">
+                        <span className={`px-3 py-1 rounded text-sm font-semibold border ${getPriorityColor(subject.priority, parseInt(numberOfSubjects))}`}>
+                          P{subject.priority}
+                        </span>
+                        <h3 className="text-lg font-semibold text-gray-800">{subject.name}</h3>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveSubject(subject.id)}
+                        className="px-3 py-1 text-sm bg-red-500 text-white rounded hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500 transition-colors"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                    
+                    {/* Study Materials */}
+                    <div className="space-y-2 pl-2 border-l-2 border-blue-300 mt-3">
+                      <div className="text-sm font-medium text-gray-700 mb-2">Study Materials/Topics:</div>
+                      {(subject.materials || []).map((material, materialIndex) => {
+                        // Handle both old format (string) and new format (object)
+                        const materialName = typeof material === 'string' ? material : (material.name || '')
+                        const materialMinutes = typeof material === 'object' && material.estimatedMinutes ? material.estimatedMinutes : ''
+                        
+                        return (
+                          <div key={materialIndex} className="flex gap-2 items-center">
+                            <input
+                              type="text"
+                              value={materialName}
+                              onChange={(e) => {
+                                const updatedMaterials = [...(subject.materials || [])]
+                                const currentMaterial = updatedMaterials[materialIndex]
+                                if (typeof currentMaterial === 'string') {
+                                  updatedMaterials[materialIndex] = e.target.value
+                                } else {
+                                  updatedMaterials[materialIndex] = {
+                                    ...currentMaterial,
+                                    name: e.target.value
+                                  }
+                                }
+                                setSubjects(subjects.map(s => 
+                                  s.id === subject.id ? { ...s, materials: updatedMaterials } : s
+                                ))
+                              }}
+                              placeholder="Topic name (e.g., Algebra)"
+                              className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                            />
+                            <input
+                              type="number"
+                              value={materialMinutes}
+                              onChange={(e) => {
+                                const updatedMaterials = [...(subject.materials || [])]
+                                const currentMaterial = updatedMaterials[materialIndex]
+                                const minutes = e.target.value ? parseInt(e.target.value) : ''
+                                if (typeof currentMaterial === 'string') {
+                                  updatedMaterials[materialIndex] = {
+                                    name: currentMaterial,
+                                    estimatedMinutes: minutes
+                                  }
+                                } else {
+                                  updatedMaterials[materialIndex] = {
+                                    ...currentMaterial,
+                                    estimatedMinutes: minutes
+                                  }
+                                }
+                                setSubjects(subjects.map(s => 
+                                  s.id === subject.id ? { ...s, materials: updatedMaterials } : s
+                                ))
+                              }}
+                              placeholder="Min"
+                              min="1"
+                              className="w-24 px-2 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                            />
+                            <span className="text-xs text-gray-500">min</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const updatedMaterials = (subject.materials || []).filter((_, i) => i !== materialIndex)
+                                setSubjects(subjects.map(s => 
+                                  s.id === subject.id ? { ...s, materials: updatedMaterials } : s
+                                ))
+                              }}
+                              className="px-3 py-2 text-sm bg-red-500 text-white rounded hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-1 transition-colors"
+                              title="Remove this material"
+                            >
+                              ×
+                            </button>
+                          </div>
+                        )
+                      })}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const updatedMaterials = [...(subject.materials || []), { name: '', estimatedMinutes: '' }]
+                          setSubjects(subjects.map(s => 
+                            s.id === subject.id ? { ...s, materials: updatedMaterials } : s
+                          ))
+                        }}
+                        className="px-3 py-2 text-sm bg-green-600 text-white rounded hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-1 transition-colors"
+                      >
+                        + Add Material/Topic
+                      </button>
+                      {(!subject.materials || subject.materials.length === 0) && (
+                        <p className="text-xs text-gray-400 italic">No materials added yet. Add topics you need to study.</p>
+                      )}
+                      <p className="text-xs text-gray-500 mt-2">
+                        💡 Specify estimated minutes per topic. If left blank, time will be auto-calculated based on total subject time.
+                      </p>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          ) : (
+            <p className="text-gray-500 text-sm italic">
+              No subjects found. Please go back to Step 1 and add subjects first.
+            </p>
+          )}
+
+          {/* General Error Display */}
+          {errors.general && (
+            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
+              <p className="text-red-600 font-medium">{errors.general}</p>
+            </div>
+          )}
+
+          {/* Navigation Buttons for Step 2 */}
+          <div className="flex justify-between gap-4">
+            <button
+              type="button"
+              onClick={handleBackStep}
+              className="px-8 py-3 bg-gray-500 text-white rounded-lg font-semibold text-lg hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 transition-colors"
+            >
+              ← Back
+            </button>
+            <button
+              type="submit"
+              className="px-8 py-3 bg-indigo-600 text-white rounded-lg font-semibold text-lg hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-colors"
+            >
+              Generate Study Plan
+            </button>
+          </div>
+        </div>
+      )}
     </form>
   )
 }
