@@ -1,12 +1,17 @@
 import { useState } from 'react'
+import PropTypes from 'prop-types'
 
 function StudyPlanDisplay({ studyPlan, onBack, onUpdateSubjects, onRefreshPlan }) {
   const [selectedDay, setSelectedDay] = useState(null)
   const [completedDays, setCompletedDays] = useState(new Set())
   const [completedTopics, setCompletedTopics] = useState(new Set()) // Track completed topics: "day-subject-topicIndex"
+  const [completedPomodoros, setCompletedPomodoros] = useState(new Set()) // Track completed pomodoros: "day-subject-topicIndex-pomodoroNumber"
   const [currentPage, setCurrentPage] = useState(1)
   const [editingSubjectId, setEditingSubjectId] = useState(null)
   const [editingMaterials, setEditingMaterials] = useState([])
+  const [showBreakModal, setShowBreakModal] = useState(false)
+  const [showLongBreakModal, setShowLongBreakModal] = useState(false)
+  const [showConfetti, setShowConfetti] = useState(false)
   
   // Pagination settings
   const daysPerPage = 7 // Show 7 days per page (one week)
@@ -45,6 +50,48 @@ function StudyPlanDisplay({ studyPlan, onBack, onUpdateSubjects, onRefreshPlan }
     return completedTopics.has(topicKey)
   }
 
+  // Toggle pomodoro completion
+  const togglePomodoroComplete = (day, subjectName, topicIndex, pomodoroNumber) => {
+    const pomodoroKey = `${day}-${subjectName}-${topicIndex}-${pomodoroNumber}`
+    const newCompleted = new Set(completedPomodoros)
+    const wasCompleted = newCompleted.has(pomodoroKey)
+    
+    if (wasCompleted) {
+      // Unchecking - remove from set
+      newCompleted.delete(pomodoroKey)
+      setCompletedPomodoros(newCompleted)
+      // Hide modals if unchecking
+      setShowBreakModal(false)
+      setShowLongBreakModal(false)
+      setShowConfetti(false)
+    } else {
+      // Checking - add to set
+      newCompleted.add(pomodoroKey)
+      setCompletedPomodoros(newCompleted)
+      
+      // Count total completed pomodoros
+      const totalCompleted = newCompleted.size
+      
+      // Check if this is the 5th pomodoro (or a multiple of 5)
+      if (totalCompleted > 0 && totalCompleted % 5 === 0) {
+        // 30 minute break with confetti!
+        setShowConfetti(true)
+        setShowLongBreakModal(true)
+        // Auto-hide confetti after 5 seconds
+        setTimeout(() => setShowConfetti(false), 5000)
+      } else {
+        // Regular 5 minute break
+        setShowBreakModal(true)
+      }
+    }
+  }
+
+  // Check if a pomodoro is completed
+  const isPomodoroCompleted = (day, subjectName, topicIndex, pomodoroNumber) => {
+    const pomodoroKey = `${day}-${subjectName}-${topicIndex}-${pomodoroNumber}`
+    return completedPomodoros.has(pomodoroKey)
+  }
+
   const progressPercentage = studyPlan.dailySchedule.length > 0
     ? Math.round((completedDays.size / studyPlan.dailySchedule.length) * 100)
     : 0
@@ -66,7 +113,79 @@ function StudyPlanDisplay({ studyPlan, onBack, onUpdateSubjects, onRefreshPlan }
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-8">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-8 relative">
+      {/* Confetti Effect */}
+      {showConfetti && (
+        <div className="fixed inset-0 pointer-events-none z-50 overflow-hidden">
+          {Array.from({ length: 50 }).map((_, i) => (
+            <div
+              key={i}
+              className="absolute animate-bounce"
+              style={{
+                left: `${Math.random() * 100}%`,
+                top: `${Math.random() * 100}%`,
+                animationDelay: `${Math.random() * 2}s`,
+                animationDuration: `${2 + Math.random() * 2}s`,
+              }}
+            >
+              <span
+                className="text-2xl"
+                style={{
+                  color: ['#FF6B6B', '#4ECDC4', '#FFE66D', '#95E1D3', '#F38181'][Math.floor(Math.random() * 5)],
+                }}
+              >
+                🎉
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* 5 Minute Break Modal */}
+      {showBreakModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={() => setShowBreakModal(false)}>
+          <div className="bg-white rounded-lg p-8 max-w-md mx-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="text-center">
+              <div className="text-6xl mb-4">⏱️</div>
+              <h2 className="text-2xl font-bold text-gray-800 mb-2">Great Work!</h2>
+              <p className="text-lg text-gray-600 mb-6">Take a 5 minute break</p>
+              <button
+                onClick={() => setShowBreakModal(false)}
+                className="px-6 py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+              >
+                Continue Studying
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 30 Minute Break Modal with Confetti */}
+      {showLongBreakModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={() => {
+          setShowLongBreakModal(false)
+          setShowConfetti(false)
+        }}>
+          <div className="bg-gradient-to-br from-yellow-100 to-orange-100 rounded-lg p-8 max-w-md mx-4 shadow-xl border-4 border-yellow-400" onClick={(e) => e.stopPropagation()}>
+            <div className="text-center">
+              <div className="text-6xl mb-4">🎉🎊🎈</div>
+              <h2 className="text-3xl font-bold text-gray-800 mb-2">Congratulations!</h2>
+              <p className="text-xl text-gray-700 mb-2 font-semibold">You've completed 5 pomodoros!</p>
+              <p className="text-lg text-gray-600 mb-6">Take a well-deserved 30 minute break</p>
+              <button
+                onClick={() => {
+                  setShowLongBreakModal(false)
+                  setShowConfetti(false)
+                }}
+                className="px-6 py-3 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 transition-colors"
+              >
+                Continue Studying
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="container mx-auto px-4 max-w-6xl">
         {/* Header */}
         <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
@@ -199,69 +318,148 @@ function StudyPlanDisplay({ studyPlan, onBack, onUpdateSubjects, onRefreshPlan }
                           {editingMaterials.map((material, idx) => {
                             // Handle both old format (string) and new format (object)
                             const materialName = typeof material === 'string' ? material : (material.name || '')
-                            const materialMinutes = typeof material === 'object' && material.estimatedMinutes ? material.estimatedMinutes : ''
+                            // Ensure timeType is explicitly set, default to empty string
+                            const timeType = typeof material === 'object' && material.timeType !== undefined && material.timeType !== null 
+                              ? material.timeType 
+                              : ''
+                            const materialValue = timeType === 'pomodoro' && typeof material === 'object'
+                              ? (material.pomodoroCount || '')
+                              : (timeType === 'minutes' && typeof material === 'object' && material.estimatedMinutes ? material.estimatedMinutes : '')
                             
                             return (
-                              <div key={idx} className="flex gap-2 items-center">
-                                <input
-                                  type="text"
-                                  value={materialName}
-                                  onChange={(e) => {
-                                    const updated = [...editingMaterials]
-                                    const currentMaterial = updated[idx]
-                                    if (typeof currentMaterial === 'string') {
-                                      updated[idx] = e.target.value
-                                    } else {
-                                      updated[idx] = {
-                                        ...currentMaterial,
-                                        name: e.target.value
+                              <div key={idx} className="flex flex-col gap-2">
+                                <div className="flex gap-2 items-center">
+                                  <input
+                                    type="text"
+                                    value={materialName}
+                                    onChange={(e) => {
+                                      const updated = [...editingMaterials]
+                                      const currentMaterial = updated[idx]
+                                      if (typeof currentMaterial === 'string') {
+                                        updated[idx] = e.target.value
+                                      } else {
+                                        updated[idx] = {
+                                          ...currentMaterial,
+                                          name: e.target.value
+                                        }
                                       }
-                                    }
-                                    setEditingMaterials(updated)
-                                  }}
-                                  placeholder="Topic name (e.g., Algebra)"
-                                  className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                />
-                                <input
-                                  type="number"
-                                  value={materialMinutes}
-                                  onChange={(e) => {
-                                    const updated = [...editingMaterials]
-                                    const currentMaterial = updated[idx]
-                                    const minutes = e.target.value ? parseInt(e.target.value) : ''
-                                    if (typeof currentMaterial === 'string') {
-                                      updated[idx] = {
-                                        name: currentMaterial,
-                                        estimatedMinutes: minutes
+                                      setEditingMaterials(updated)
+                                    }}
+                                    placeholder="Topic name"
+                                    className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                  />
+                                  <select
+                                    value={timeType}
+                                    onChange={(e) => {
+                                      const updated = [...editingMaterials]
+                                      const currentMaterial = updated[idx]
+                                      const newTimeType = e.target.value
+                                      if (typeof currentMaterial === 'string') {
+                                        updated[idx] = {
+                                          name: currentMaterial,
+                                          timeType: newTimeType,
+                                          estimatedMinutes: '',
+                                          pomodoroCount: ''
+                                        }
+                                      } else {
+                                        updated[idx] = {
+                                          ...currentMaterial,
+                                          timeType: newTimeType,
+                                          estimatedMinutes: newTimeType === 'minutes' ? currentMaterial.estimatedMinutes : '',
+                                          pomodoroCount: newTimeType === 'pomodoro' ? currentMaterial.pomodoroCount : ''
+                                        }
                                       }
-                                    } else {
-                                      updated[idx] = {
-                                        ...currentMaterial,
-                                        estimatedMinutes: minutes
-                                      }
-                                    }
-                                    setEditingMaterials(updated)
-                                  }}
-                                  placeholder="Min"
-                                  min="1"
-                                  className="w-20 px-2 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                />
-                                <span className="text-xs text-gray-500">min</span>
-                                <button
-                                  onClick={() => {
-                                    const updated = editingMaterials.filter((_, i) => i !== idx)
-                                    setEditingMaterials(updated)
-                                  }}
-                                  className="px-2 py-2 text-sm bg-red-500 text-white rounded hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500 transition-colors"
-                                >
-                                  ×
-                                </button>
+                                      setEditingMaterials(updated)
+                                    }}
+                                    className="px-2 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                                  >
+                                    <option value="">Select option</option>
+                                    <option value="minutes">Minutes</option>
+                                    <option value="pomodoro">Pomodoro</option>
+                                  </select>
+                                  {timeType === 'minutes' && (
+                                    <>
+                                      <input
+                                        type="number"
+                                        value={materialValue}
+                                        onChange={(e) => {
+                                          const updated = [...editingMaterials]
+                                          const currentMaterial = updated[idx]
+                                          const minutes = e.target.value ? parseInt(e.target.value) : ''
+                                          if (typeof currentMaterial === 'string') {
+                                            updated[idx] = {
+                                              name: currentMaterial,
+                                              timeType: 'minutes',
+                                              estimatedMinutes: minutes
+                                            }
+                                          } else {
+                                            updated[idx] = {
+                                              ...currentMaterial,
+                                              estimatedMinutes: minutes
+                                            }
+                                          }
+                                          setEditingMaterials(updated)
+                                        }}
+                                        placeholder="Min"
+                                        min="1"
+                                        className="w-20 px-2 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                      />
+                                      <span className="text-xs text-gray-500">min</span>
+                                    </>
+                                  )}
+                                  {timeType === 'pomodoro' && (
+                                    <>
+                                      <input
+                                        type="number"
+                                        value={materialValue}
+                                        onChange={(e) => {
+                                          const updated = [...editingMaterials]
+                                          const currentMaterial = updated[idx]
+                                          const pomodoroCount = e.target.value ? parseInt(e.target.value) : ''
+                                          if (typeof currentMaterial === 'string') {
+                                            updated[idx] = {
+                                              name: currentMaterial,
+                                              timeType: 'pomodoro',
+                                              pomodoroCount: pomodoroCount,
+                                              estimatedMinutes: pomodoroCount ? pomodoroCount * 25 : ''
+                                            }
+                                          } else {
+                                            updated[idx] = {
+                                              ...currentMaterial,
+                                              pomodoroCount: pomodoroCount,
+                                              estimatedMinutes: pomodoroCount ? pomodoroCount * 25 : ''
+                                            }
+                                          }
+                                          setEditingMaterials(updated)
+                                        }}
+                                        placeholder="Count"
+                                        min="1"
+                                        className="w-20 px-2 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                      />
+                                      <span className="text-xs text-gray-500">pomodoro(s)</span>
+                                    </>
+                                  )}
+                                  <button
+                                    onClick={() => {
+                                      const updated = editingMaterials.filter((_, i) => i !== idx)
+                                      setEditingMaterials(updated)
+                                    }}
+                                    className="px-2 py-2 text-sm bg-red-500 text-white rounded hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500 transition-colors"
+                                  >
+                                    ×
+                                  </button>
+                                </div>
+                                {timeType === 'pomodoro' && materialValue && (
+                                  <p className="text-xs text-gray-500 ml-2">
+                                    = {parseInt(materialValue) * 25} minutes (1 pomodoro = 25 min)
+                                  </p>
+                                )}
                               </div>
                             )
                           })}
                           <div className="flex gap-2">
                             <button
-                              onClick={() => setEditingMaterials([...editingMaterials, { name: '', estimatedMinutes: '' }])}
+                              onClick={() => setEditingMaterials([...editingMaterials, { name: '', timeType: '', estimatedMinutes: '', pomodoroCount: '' }])}
                               className="px-3 py-2 text-sm bg-green-600 text-white rounded hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 transition-colors"
                             >
                               + Add Topic
@@ -280,11 +478,13 @@ function StudyPlanDisplay({ studyPlan, onBack, onUpdateSubjects, onRefreshPlan }
                                     })
                                     .map(m => {
                                       if (typeof m === 'string') {
-                                        return { name: m.trim(), estimatedMinutes: '' }
+                                        return { name: m.trim(), timeType: '', estimatedMinutes: '', pomodoroCount: '' }
                                       }
                                       return {
                                         name: m.name.trim(),
-                                        estimatedMinutes: m.estimatedMinutes || ''
+                                        timeType: m.timeType || '',
+                                        estimatedMinutes: m.estimatedMinutes || '',
+                                        pomodoroCount: m.pomodoroCount || ''
                                       }
                                     })
                                   
@@ -320,18 +520,28 @@ function StudyPlanDisplay({ studyPlan, onBack, onUpdateSubjects, onRefreshPlan }
                             <div className="flex flex-wrap gap-2">
                               {subjectMaterials.map((material, idx) => {
                                 const materialName = typeof material === 'string' ? material : (material.name || '')
+                                const timeType = typeof material === 'object' && material.timeType ? material.timeType : 'minutes'
                                 const materialMinutes = typeof material === 'object' && material.estimatedMinutes ? material.estimatedMinutes : null
+                                const pomodoroCount = typeof material === 'object' && material.pomodoroCount ? material.pomodoroCount : null
                                 
                                 return (
                                   <span
                                     key={idx}
                                     className="px-2 py-1 bg-white border border-gray-300 rounded text-sm text-gray-700"
-                                    title={materialMinutes ? `Estimated: ${materialMinutes} minutes` : 'Time will be auto-calculated'}
+                                    title={
+                                      timeType === 'pomodoro' && pomodoroCount 
+                                        ? `${pomodoroCount} pomodoro(s) = ${materialMinutes} minutes` 
+                                        : materialMinutes 
+                                        ? `Estimated: ${materialMinutes} minutes` 
+                                        : 'Time will be auto-calculated'
+                                    }
                                   >
                                     {materialName}
-                                    {materialMinutes && (
+                                    {timeType === 'pomodoro' && pomodoroCount ? (
+                                      <span className="ml-1 text-xs text-gray-500">({pomodoroCount} pomodoro{pomodoroCount > 1 ? 's' : ''})</span>
+                                    ) : materialMinutes ? (
                                       <span className="ml-1 text-xs text-gray-500">({materialMinutes}m)</span>
-                                    )}
+                                    ) : null}
                                   </span>
                                 )
                               })}
@@ -471,33 +681,66 @@ function StudyPlanDisplay({ studyPlan, onBack, onUpdateSubjects, onRefreshPlan }
                                         // Handle both string and object formats
                                         const topicName = typeof topic === 'string' ? topic : (topic.name || '')
                                         const topicMinutes = typeof topic === 'object' && topic.estimatedMinutes ? topic.estimatedMinutes : null
+                                        const pomodoroCount = typeof topic === 'object' && topic.pomodoroCount ? topic.pomodoroCount : null
+                                        const timeType = typeof topic === 'object' && topic.timeType ? topic.timeType : null
                                         const topicCompleted = isTopicCompleted(day.day, subject.name, topicIdx)
                                         
                                         return (
                                           <div
                                             key={topicIdx}
-                                            className="flex items-center gap-1.5"
+                                            className="flex flex-col gap-1"
                                           >
-                                            <input
-                                              type="checkbox"
-                                              checked={topicCompleted}
-                                              onChange={() => toggleTopicComplete(day.day, subject.name, topicIdx)}
-                                              className="w-4 h-4 text-green-600 rounded focus:ring-2 focus:ring-green-500 cursor-pointer"
-                                              title="Mark topic as completed"
-                                            />
-                                            <span
-                                              className={`px-2 py-0.5 bg-blue-50 border border-blue-200 rounded text-xs text-gray-700 transition-all ${
-                                                topicCompleted 
-                                                  ? 'line-through text-gray-400 bg-green-50 border-green-300' 
-                                                  : ''
-                                              }`}
-                                              title={topicMinutes ? `Estimated: ${topicMinutes} minutes` : 'Time auto-calculated'}
-                                            >
-                                              {topicName}
-                                              {topicMinutes && (
-                                                <span className="ml-1 text-gray-500">({topicMinutes}m)</span>
-                                              )}
-                                            </span>
+                                            <div className="flex items-center gap-1.5">
+                                              <input
+                                                type="checkbox"
+                                                checked={topicCompleted}
+                                                onChange={() => toggleTopicComplete(day.day, subject.name, topicIdx)}
+                                                className="w-4 h-4 text-green-600 rounded focus:ring-2 focus:ring-green-500 cursor-pointer"
+                                                title="Mark topic as completed"
+                                              />
+                                              <span
+                                                className={`px-2 py-0.5 bg-blue-50 border border-blue-200 rounded text-xs text-gray-700 transition-all ${
+                                                  topicCompleted 
+                                                    ? 'line-through text-gray-400 bg-green-50 border-green-300' 
+                                                    : ''
+                                                }`}
+                                                title={topicMinutes ? `Estimated: ${topicMinutes} minutes` : 'Time auto-calculated'}
+                                              >
+                                                {topicName}
+                                                {topicMinutes && !pomodoroCount && (
+                                                  <span className="ml-1 text-gray-500">({topicMinutes}m)</span>
+                                                )}
+                                                {pomodoroCount && (
+                                                  <span className="ml-1 text-gray-500">({pomodoroCount} pomodoro{pomodoroCount > 1 ? 's' : ''})</span>
+                                                )}
+                                              </span>
+                                            </div>
+                                            {/* Pomodoro checkboxes */}
+                                            {pomodoroCount && pomodoroCount > 0 && (
+                                              <div className="ml-6 flex items-center gap-1 flex-wrap">
+                                                <span className="text-xs text-gray-500 mr-1">Pomodoros:</span>
+                                                {Array.from({ length: pomodoroCount }, (_, i) => i + 1).map((pomoNum) => {
+                                                  const pomoCompleted = isPomodoroCompleted(day.day, subject.name, topicIdx, pomoNum)
+                                                  return (
+                                                    <label
+                                                      key={pomoNum}
+                                                      className="flex items-center gap-1 cursor-pointer"
+                                                      title={`Pomodoro ${pomoNum} of ${pomodoroCount}`}
+                                                    >
+                                                      <input
+                                                        type="checkbox"
+                                                        checked={pomoCompleted}
+                                                        onChange={() => togglePomodoroComplete(day.day, subject.name, topicIdx, pomoNum)}
+                                                        className="w-3 h-3 text-orange-600 rounded focus:ring-1 focus:ring-orange-500 cursor-pointer"
+                                                      />
+                                                      <span className={`text-xs ${pomoCompleted ? 'text-gray-400 line-through' : 'text-gray-600'}`}>
+                                                        {pomoNum}
+                                                      </span>
+                                                    </label>
+                                                  )
+                                                })}
+                                              </div>
+                                            )}
                                           </div>
                                         )
                                       })}
@@ -600,6 +843,30 @@ function StudyPlanDisplay({ studyPlan, onBack, onUpdateSubjects, onRefreshPlan }
       </div>
     </div>
   )
+}
+
+StudyPlanDisplay.propTypes = {
+  studyPlan: PropTypes.shape({
+    dailySchedule: PropTypes.arrayOf(PropTypes.shape({
+      day: PropTypes.number.isRequired,
+      date: PropTypes.string.isRequired,
+      subjects: PropTypes.array.isRequired,
+      totalMinutes: PropTypes.number.isRequired
+    })).isRequired,
+    daysUntilExam: PropTypes.number.isRequired,
+    totalHours: PropTypes.number.isRequired,
+    earliestExamDate: PropTypes.string.isRequired,
+    subjects: PropTypes.array.isRequired,
+    summary: PropTypes.shape({
+      totalDays: PropTypes.number.isRequired,
+      totalHours: PropTypes.number.isRequired,
+      hoursPerDay: PropTypes.number.isRequired,
+      subjectsCount: PropTypes.number.isRequired
+    }).isRequired
+  }).isRequired,
+  onBack: PropTypes.func.isRequired,
+  onUpdateSubjects: PropTypes.func,
+  onRefreshPlan: PropTypes.func
 }
 
 export default StudyPlanDisplay

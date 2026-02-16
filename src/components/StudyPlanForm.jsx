@@ -112,7 +112,7 @@ function StudyPlanForm() {
       name: newSubjectName.trim(),
       priority: priorityNum,
       examDates: sortedExamDates, // Store as array
-      materials: [] // Array to store study materials/topics as objects {name, estimatedMinutes}
+      materials: [] // Array to store study materials/topics as objects {name, timeType: 'minutes'|'pomodoro', estimatedMinutes, pomodoroCount}
     }
 
     // Update subjects
@@ -341,14 +341,14 @@ function StudyPlanForm() {
           onChange={(e) => handleNumberOfSubjectsChange(e.target.value)}
           min="1"
           max="20"
-          placeholder="e.g., 8"
+          placeholder="e.g. 8"
           className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
         />
         {errors.numberOfSubjects && (
           <p className="text-red-500 text-sm mt-1">{errors.numberOfSubjects}</p>
         )}
         <p className="text-gray-500 text-sm mt-1">
-          How many subjects do you need to study? (Priority 1 = highest priority, {numberOfSubjects || 'N'} = lowest priority)
+          How many subjects do you need to study? (e.g. 1 = highest priority, 8 = lowest priority)
         </p>
       </div>
 
@@ -365,96 +365,114 @@ function StudyPlanForm() {
         
         {/* Add Subject Input */}
         {numberOfSubjects && parseInt(numberOfSubjects) > 0 && (
-          <div className="space-y-3 mb-4">
-            <div className="flex flex-col sm:flex-row gap-2">
-              <input
-                type="text"
-                value={newSubjectName}
-                onChange={(e) => {
-                  setNewSubjectName(e.target.value)
-                  setErrors({ ...errors, subject: '' })
-                }}
-                placeholder="Enter subject name (e.g., Math, English, Irish)"
-                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                disabled={subjects.length >= parseInt(numberOfSubjects)}
-              />
-              <select
-                value={newSubjectPriority}
-                onChange={(e) => {
-                  const selectedPriority = parseInt(e.target.value, 10)
-                  if (!isNaN(selectedPriority)) {
-                    setNewSubjectPriority(selectedPriority)
+          <div className="bg-gray-100 rounded-lg p-4 mb-4 border border-gray-200">
+            <div className="space-y-3">
+              <div className="flex flex-col sm:flex-row gap-2">
+                <input
+                  type="text"
+                  value={newSubjectName}
+                  onChange={(e) => {
+                    setNewSubjectName(e.target.value)
                     setErrors({ ...errors, subject: '' })
-                  }
-                }}
-                className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                disabled={subjects.length >= parseInt(numberOfSubjects) || availablePriorities.length === 0}
-              >
-                {availablePriorities.map(priority => (
-                  <option key={priority} value={String(priority)}>
-                    Priority {priority}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                onClick={handleAddSubject}
-                disabled={subjects.length >= parseInt(numberOfSubjects)}
-                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
-              >
-                Add Subject
-              </button>
-            </div>
-            
-            {/* Exam Dates Section */}
-            <div className="space-y-2">
-              <label className="block text-sm font-medium text-gray-700">
-                Exam Dates <span className="text-red-500">*</span>
-                <span className="text-xs text-gray-500 ml-2">(e.g., Paper 1, Paper 2)</span>
-              </label>
-              {newSubjectExamDates.map((date, index) => (
-                <div key={index} className="flex gap-2 items-center">
-                  <input
-                    type="date"
-                    value={date}
-                    onChange={(e) => {
-                      const updatedDates = [...newSubjectExamDates]
-                      updatedDates[index] = e.target.value
-                      setNewSubjectExamDates(updatedDates)
+                  }}
+                  placeholder="Enter subject name (e.g. Math, English, Irish)"
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                  disabled={subjects.length >= parseInt(numberOfSubjects)}
+                />
+                <select
+                  value={newSubjectPriority}
+                  onChange={(e) => {
+                    const selectedPriority = parseInt(e.target.value, 10)
+                    if (!isNaN(selectedPriority)) {
+                      setNewSubjectPriority(selectedPriority)
                       setErrors({ ...errors, subject: '' })
-                    }}
-                    min={new Date().toISOString().split('T')[0]}
-                    placeholder={`Exam ${index + 1} date`}
-                    className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    disabled={subjects.length >= parseInt(numberOfSubjects)}
-                  />
-                  {index === newSubjectExamDates.length - 1 && (
-                    <button
-                      type="button"
-                      onClick={() => setNewSubjectExamDates([...newSubjectExamDates, ''])}
-                      disabled={subjects.length >= parseInt(numberOfSubjects)}
-                      className="px-3 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-1 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
-                      title="Add another exam date"
-                    >
-                      + Add Date
-                    </button>
-                  )}
-                  {newSubjectExamDates.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const updatedDates = newSubjectExamDates.filter((_, i) => i !== index)
+                    }
+                  }}
+                  className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                  disabled={subjects.length >= parseInt(numberOfSubjects) || availablePriorities.length === 0}
+                >
+                  {availablePriorities.map(priority => (
+                    <option key={priority} value={String(priority)}>
+                      Priority {priority}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={handleAddSubject}
+                  disabled={subjects.length >= parseInt(numberOfSubjects)}
+                  className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+                >
+                  Add Subject
+                </button>
+              </div>
+              
+              {/* Exam Dates Section */}
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-gray-700">
+                  Exam Dates <span className="text-red-500">*</span>
+                </label>
+                <p className="text-xs text-gray-500 italic">
+                  💡 Some exams consist of Paper 1 and Paper 2 exams. Add multiple dates if your subject has multiple papers.
+                </p>
+                {newSubjectExamDates.map((date, index) => (
+                  <div key={index} className="flex gap-2 items-center">
+                    <input
+                      type="date"
+                      value={date}
+                      onChange={(e) => {
+                        const inputValue = e.target.value
+                        // Validate year is exactly 4 digits
+                        if (inputValue) {
+                          const dateParts = inputValue.split('-')
+                          if (dateParts.length === 3) {
+                            const year = dateParts[0]
+                            // Check if year is exactly 4 digits and within reasonable range
+                            if (year.length !== 4 || isNaN(year) || parseInt(year) < new Date().getFullYear() || parseInt(year) > new Date().getFullYear() + 100) {
+                              setErrors({ ...errors, subject: 'Please enter a valid date with a 4-digit year' })
+                              return
+                            }
+                          }
+                        }
+                        const updatedDates = [...newSubjectExamDates]
+                        updatedDates[index] = inputValue
                         setNewSubjectExamDates(updatedDates)
                         setErrors({ ...errors, subject: '' })
                       }}
-                      className="px-3 py-2 text-sm bg-red-500 text-white rounded-lg hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-1 transition-colors"
-                      title="Remove this exam date"
-                    >
-                      Remove
-                    </button>
-                  )}
-                </div>
-              ))}
+                      min={new Date().toISOString().split('T')[0]}
+                      max={new Date(new Date().getFullYear() + 100, 11, 31).toISOString().split('T')[0]}
+                      placeholder={`Exam ${index + 1} date`}
+                      className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                      disabled={subjects.length >= parseInt(numberOfSubjects)}
+                    />
+                    {index === newSubjectExamDates.length - 1 && (
+                      <button
+                        type="button"
+                        onClick={() => setNewSubjectExamDates([...newSubjectExamDates, ''])}
+                        disabled={subjects.length >= parseInt(numberOfSubjects)}
+                        className="px-3 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-1 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+                        title="Add another exam date"
+                      >
+                        + Add Date
+                      </button>
+                    )}
+                    {newSubjectExamDates.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const updatedDates = newSubjectExamDates.filter((_, i) => i !== index)
+                          setNewSubjectExamDates(updatedDates)
+                          setErrors({ ...errors, subject: '' })
+                        }}
+                        className="px-3 py-2 text-sm bg-red-500 text-white rounded-lg hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-1 transition-colors"
+                        title="Remove this exam date"
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         )}
@@ -526,6 +544,18 @@ function StudyPlanForm() {
                             value={date}
                             onChange={(e) => {
                               const newDate = e.target.value
+                              // Validate year is exactly 4 digits
+                              if (newDate) {
+                                const dateParts = newDate.split('-')
+                                if (dateParts.length === 3) {
+                                  const year = dateParts[0]
+                                  // Check if year is exactly 4 digits and within reasonable range
+                                  if (year.length !== 4 || isNaN(year) || parseInt(year) < new Date().getFullYear() || parseInt(year) > new Date().getFullYear() + 100) {
+                                    setErrors({ ...errors, subject: 'Please enter a valid date with a 4-digit year' })
+                                    return
+                                  }
+                                }
+                              }
                               const selectedDate = new Date(newDate)
                               const today = new Date()
                               today.setHours(0, 0, 0, 0)
@@ -546,6 +576,7 @@ function StudyPlanForm() {
                               setErrors({ ...errors, subject: '' })
                             }}
                             min={new Date().toISOString().split('T')[0]}
+                            max={new Date(new Date().getFullYear() + 100, 11, 31).toISOString().split('T')[0]}
                             className="flex-1 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
                           />
                           <button
@@ -611,7 +642,7 @@ function StudyPlanForm() {
               min="0.5"
               max="24"
               step="0.5"
-              placeholder="e.g., 2.5"
+              placeholder="e.g. 2.5"
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
             {errors.dailyHours && (
@@ -698,78 +729,161 @@ function StudyPlanForm() {
                       {(subject.materials || []).map((material, materialIndex) => {
                         // Handle both old format (string) and new format (object)
                         const materialName = typeof material === 'string' ? material : (material.name || '')
-                        const materialMinutes = typeof material === 'object' && material.estimatedMinutes ? material.estimatedMinutes : ''
+                        // Ensure timeType is explicitly set, default to empty string
+                        const timeType = typeof material === 'object' && material.timeType !== undefined && material.timeType !== null 
+                          ? material.timeType 
+                          : ''
+                        const materialValue = timeType === 'pomodoro' && typeof material === 'object'
+                          ? (material.pomodoroCount || '')
+                          : (timeType === 'minutes' && typeof material === 'object' && material.estimatedMinutes ? material.estimatedMinutes : '')
                         
                         return (
-                          <div key={materialIndex} className="flex gap-2 items-center">
-                            <input
-                              type="text"
-                              value={materialName}
-                              onChange={(e) => {
-                                const updatedMaterials = [...(subject.materials || [])]
-                                const currentMaterial = updatedMaterials[materialIndex]
-                                if (typeof currentMaterial === 'string') {
-                                  updatedMaterials[materialIndex] = e.target.value
-                                } else {
-                                  updatedMaterials[materialIndex] = {
-                                    ...currentMaterial,
-                                    name: e.target.value
+                          <div key={materialIndex} className="flex flex-col gap-2">
+                            <div className="flex gap-2 items-center">
+                              <input
+                                type="text"
+                                value={materialName}
+                                onChange={(e) => {
+                                  const updatedMaterials = [...(subject.materials || [])]
+                                  const currentMaterial = updatedMaterials[materialIndex]
+                                  if (typeof currentMaterial === 'string') {
+                                    updatedMaterials[materialIndex] = e.target.value
+                                  } else {
+                                    updatedMaterials[materialIndex] = {
+                                      ...currentMaterial,
+                                      name: e.target.value
+                                    }
                                   }
-                                }
-                                setSubjects(subjects.map(s => 
-                                  s.id === subject.id ? { ...s, materials: updatedMaterials } : s
-                                ))
-                              }}
-                              placeholder="Topic name (e.g., Algebra)"
-                              className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-                            />
-                            <input
-                              type="number"
-                              value={materialMinutes}
-                              onChange={(e) => {
-                                const updatedMaterials = [...(subject.materials || [])]
-                                const currentMaterial = updatedMaterials[materialIndex]
-                                const minutes = e.target.value ? parseInt(e.target.value) : ''
-                                if (typeof currentMaterial === 'string') {
-                                  updatedMaterials[materialIndex] = {
-                                    name: currentMaterial,
-                                    estimatedMinutes: minutes
+                                  setSubjects(subjects.map(s => 
+                                    s.id === subject.id ? { ...s, materials: updatedMaterials } : s
+                                  ))
+                                }}
+                                placeholder="Topic name"
+                                className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                              />
+                              <select
+                                value={timeType}
+                                onChange={(e) => {
+                                  const updatedMaterials = [...(subject.materials || [])]
+                                  const currentMaterial = updatedMaterials[materialIndex]
+                                  const newTimeType = e.target.value
+                                  if (typeof currentMaterial === 'string') {
+                                    updatedMaterials[materialIndex] = {
+                                      name: currentMaterial,
+                                      timeType: newTimeType,
+                                      estimatedMinutes: '',
+                                      pomodoroCount: ''
+                                    }
+                                  } else {
+                                    updatedMaterials[materialIndex] = {
+                                      ...currentMaterial,
+                                      timeType: newTimeType,
+                                      estimatedMinutes: newTimeType === 'minutes' ? currentMaterial.estimatedMinutes : '',
+                                      pomodoroCount: newTimeType === 'pomodoro' ? currentMaterial.pomodoroCount : ''
+                                    }
                                   }
-                                } else {
-                                  updatedMaterials[materialIndex] = {
-                                    ...currentMaterial,
-                                    estimatedMinutes: minutes
-                                  }
-                                }
-                                setSubjects(subjects.map(s => 
-                                  s.id === subject.id ? { ...s, materials: updatedMaterials } : s
-                                ))
-                              }}
-                              placeholder="Min"
-                              min="1"
-                              className="w-24 px-2 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-                            />
-                            <span className="text-xs text-gray-500">min</span>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const updatedMaterials = (subject.materials || []).filter((_, i) => i !== materialIndex)
-                                setSubjects(subjects.map(s => 
-                                  s.id === subject.id ? { ...s, materials: updatedMaterials } : s
-                                ))
-                              }}
-                              className="px-3 py-2 text-sm bg-red-500 text-white rounded hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-1 transition-colors"
-                              title="Remove this material"
-                            >
-                              ×
-                            </button>
+                                  setSubjects(subjects.map(s => 
+                                    s.id === subject.id ? { ...s, materials: updatedMaterials } : s
+                                  ))
+                                }}
+                                className="px-2 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white"
+                              >
+                                <option value="">Select option</option>
+                                <option value="minutes">Minutes</option>
+                                <option value="pomodoro">Pomodoro</option>
+                              </select>
+                              {timeType === 'minutes' && (
+                                <>
+                                  <input
+                                    type="number"
+                                    value={materialValue}
+                                    onChange={(e) => {
+                                      const updatedMaterials = [...(subject.materials || [])]
+                                      const currentMaterial = updatedMaterials[materialIndex]
+                                      const minutes = e.target.value ? parseInt(e.target.value) : ''
+                                      if (typeof currentMaterial === 'string') {
+                                        updatedMaterials[materialIndex] = {
+                                          name: currentMaterial,
+                                          timeType: 'minutes',
+                                          estimatedMinutes: minutes
+                                        }
+                                      } else {
+                                        updatedMaterials[materialIndex] = {
+                                          ...currentMaterial,
+                                          estimatedMinutes: minutes
+                                        }
+                                      }
+                                      setSubjects(subjects.map(s => 
+                                        s.id === subject.id ? { ...s, materials: updatedMaterials } : s
+                                      ))
+                                    }}
+                                    placeholder="Min"
+                                    min="1"
+                                    className="w-24 px-2 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                  />
+                                  <span className="text-xs text-gray-500">min</span>
+                                </>
+                              )}
+                              {timeType === 'pomodoro' && (
+                                <>
+                                  <input
+                                    type="number"
+                                    value={materialValue}
+                                    onChange={(e) => {
+                                      const updatedMaterials = [...(subject.materials || [])]
+                                      const currentMaterial = updatedMaterials[materialIndex]
+                                      const pomodoroCount = e.target.value ? parseInt(e.target.value) : ''
+                                      if (typeof currentMaterial === 'string') {
+                                        updatedMaterials[materialIndex] = {
+                                          name: currentMaterial,
+                                          timeType: 'pomodoro',
+                                          pomodoroCount: pomodoroCount,
+                                          estimatedMinutes: pomodoroCount ? pomodoroCount * 25 : ''
+                                        }
+                                      } else {
+                                        updatedMaterials[materialIndex] = {
+                                          ...currentMaterial,
+                                          pomodoroCount: pomodoroCount,
+                                          estimatedMinutes: pomodoroCount ? pomodoroCount * 25 : ''
+                                        }
+                                      }
+                                      setSubjects(subjects.map(s => 
+                                        s.id === subject.id ? { ...s, materials: updatedMaterials } : s
+                                      ))
+                                    }}
+                                    placeholder="Count"
+                                    min="1"
+                                    className="w-24 px-2 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                  />
+                                  <span className="text-xs text-gray-500">pomodoro(s)</span>
+                                </>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const updatedMaterials = (subject.materials || []).filter((_, i) => i !== materialIndex)
+                                  setSubjects(subjects.map(s => 
+                                    s.id === subject.id ? { ...s, materials: updatedMaterials } : s
+                                  ))
+                                }}
+                                className="px-3 py-2 text-sm bg-red-500 text-white rounded hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-1 transition-colors"
+                                title="Remove this material"
+                              >
+                                ×
+                              </button>
+                            </div>
+                            {timeType === 'pomodoro' && materialValue && (
+                              <p className="text-xs text-gray-500 ml-2">
+                                = {parseInt(materialValue) * 25} minutes (1 pomodoro = 25 min)
+                              </p>
+                            )}
                           </div>
                         )
                       })}
                       <button
                         type="button"
                         onClick={() => {
-                          const updatedMaterials = [...(subject.materials || []), { name: '', estimatedMinutes: '' }]
+                          const updatedMaterials = [...(subject.materials || []), { name: '', timeType: '', estimatedMinutes: '', pomodoroCount: '' }]
                           setSubjects(subjects.map(s => 
                             s.id === subject.id ? { ...s, materials: updatedMaterials } : s
                           ))
@@ -782,7 +896,7 @@ function StudyPlanForm() {
                         <p className="text-xs text-gray-400 italic">No materials added yet. Add topics you need to study.</p>
                       )}
                       <p className="text-xs text-gray-500 mt-2">
-                        💡 Specify estimated minutes per topic. If left blank, time will be auto-calculated based on total subject time.
+                        💡 Specify estimated time per topic (minutes or pomodoros). 1 pomodoro = 25 minutes. If left blank, time will be auto-calculated.
                       </p>
                     </div>
                   </div>

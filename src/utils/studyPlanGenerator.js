@@ -241,15 +241,23 @@ function distributeTopicsForDay(subject, day, totalDays, availableMinutes = null
     return []
   }
   
-  // Convert to normalized format: array of {name, estimatedMinutes}
+  // Convert to normalized format: array of {name, estimatedMinutes, pomodoroCount, timeType}
+  // Handle both minutes and pomodoro (pomodoro is already converted to minutes in the form)
   const normalizedMaterials = materials
     .map(m => {
       if (typeof m === 'string') {
-        return { name: m.trim(), estimatedMinutes: null }
+        return { name: m.trim(), estimatedMinutes: null, pomodoroCount: null, timeType: null }
+      }
+      // If pomodoro, ensure estimatedMinutes is calculated (should already be done in form, but double-check)
+      let estimatedMinutes = m.estimatedMinutes || null
+      if (m.timeType === 'pomodoro' && m.pomodoroCount && !estimatedMinutes) {
+        estimatedMinutes = m.pomodoroCount * 25
       }
       return {
         name: (m.name || '').trim(),
-        estimatedMinutes: m.estimatedMinutes || null
+        estimatedMinutes: estimatedMinutes,
+        pomodoroCount: m.pomodoroCount || null,
+        timeType: m.timeType || null
       }
     })
     .filter(m => m.name !== '')
@@ -312,7 +320,9 @@ function distributeTopicsForDay(subject, day, totalDays, availableMinutes = null
     if (topic.estimatedMinutes <= remainingMinutes) {
       selectedTopics.push({
         name: topic.name,
-        estimatedMinutes: topic.estimatedMinutes
+        estimatedMinutes: topic.estimatedMinutes,
+        pomodoroCount: topic.pomodoroCount || null,
+        timeType: topic.timeType || null
       })
       remainingMinutes -= topic.estimatedMinutes
       
@@ -338,7 +348,9 @@ function distributeTopicsForDay(subject, day, totalDays, availableMinutes = null
       if (remainingMinutes <= 0) break
       selectedTopics.push({
         name: topic.name,
-        estimatedMinutes: topic.estimatedMinutes
+        estimatedMinutes: topic.estimatedMinutes,
+        pomodoroCount: topic.pomodoroCount || null,
+        timeType: topic.timeType || null
       })
       remainingMinutes -= topic.estimatedMinutes
       
@@ -359,7 +371,9 @@ function distributeTopicsForDay(subject, day, totalDays, availableMinutes = null
     
     selectedTopics.push({
       name: smallestTopic.name,
-      estimatedMinutes: smallestTopic.estimatedMinutes
+      estimatedMinutes: smallestTopic.estimatedMinutes,
+      pomodoroCount: smallestTopic.pomodoroCount || null,
+      timeType: smallestTopic.timeType || null
     })
     
     // Track assignment
