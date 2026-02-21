@@ -127,9 +127,9 @@ function createDailySchedule(subjects, daysUntilExam, dailyHours) {
         Math.max(0, remainingForSubject) // Don't allocate more than needed
       )
       
-      // Minimum 15 minutes if subject is included (to make it meaningful)
-      if (minutesToAllocate >= 15 || (minutesToAllocate > 0 && remainingForSubject > 0)) {
-        const finalMinutes = Math.max(15, minutesToAllocate)
+      // Minimum 25 minutes if subject is included (to make it meaningful)
+      if (minutesToAllocate >= 25 || (minutesToAllocate > 0 && remainingForSubject > 0)) {
+        const finalMinutes = Math.max(25, minutesToAllocate)
         
         // Distribute topics for this subject on this day based on available time
         let topics = []
@@ -176,7 +176,7 @@ function createDailySchedule(subjects, daysUntilExam, dailyHours) {
         const needed = subject.minutesPerDay * daysUntilExam - allocatedMinutes[subject.name]
         const minutesToAdd = Math.min(remainingMinutes, Math.ceil(needed))
         
-        if (minutesToAdd >= 15) {
+        if (minutesToAdd >= 25) {
           // Add to existing entry or create new
           const existingIndex = daySchedule.subjects.findIndex(s => s.name === subject.name)
           if (existingIndex >= 0) {

@@ -422,21 +422,29 @@ function StudyPlanForm() {
                       value={date}
                       onChange={(e) => {
                         const inputValue = e.target.value
-                        // Validate year is exactly 4 digits
-                        if (inputValue) {
-                          const dateParts = inputValue.split('-')
-                          if (dateParts.length === 3) {
-                            const year = dateParts[0]
-                            // Check if year is exactly 4 digits and within reasonable range
-                            if (year.length !== 4 || isNaN(year) || parseInt(year) < new Date().getFullYear() || parseInt(year) > new Date().getFullYear() + 100) {
-                              setErrors({ ...errors, subject: 'Please enter a valid date with a 4-digit year' })
-                              return
-                            }
-                          }
-                        }
+                        // Always update the date value first (allow typing)
                         const updatedDates = [...newSubjectExamDates]
                         updatedDates[index] = inputValue
                         setNewSubjectExamDates(updatedDates)
+                        
+                        // Only validate if date is complete (has all parts)
+                        if (inputValue && inputValue.length === 10) {
+                          const dateParts = inputValue.split('-')
+                          if (dateParts.length === 3) {
+                            const year = dateParts[0]
+                            const month = dateParts[1]
+                            const day = dateParts[2]
+                            // Check if all parts are present and year is valid
+                            if (year.length === 4 && month.length === 2 && day.length === 2) {
+                              const yearNum = parseInt(year)
+                              if (isNaN(yearNum) || yearNum < new Date().getFullYear() || yearNum > new Date().getFullYear() + 100) {
+                                setErrors({ ...errors, subject: 'Please enter a valid date with a 4-digit year' })
+                                return
+                              }
+                            }
+                          }
+                        }
+                        // Clear errors if date is being typed or is valid
                         setErrors({ ...errors, subject: '' })
                       }}
                       min={new Date().toISOString().split('T')[0]}
@@ -544,36 +552,57 @@ function StudyPlanForm() {
                             value={date}
                             onChange={(e) => {
                               const newDate = e.target.value
-                              // Validate year is exactly 4 digits
-                              if (newDate) {
+                              
+                              // Always update the date value first (allow typing)
+                              const updatedDates = [...subjectExamDates]
+                              updatedDates[dateIndex] = newDate
+                              
+                              // Only validate if date is complete (has all parts)
+                              let hasError = false
+                              if (newDate && newDate.length === 10) {
                                 const dateParts = newDate.split('-')
                                 if (dateParts.length === 3) {
                                   const year = dateParts[0]
-                                  // Check if year is exactly 4 digits and within reasonable range
-                                  if (year.length !== 4 || isNaN(year) || parseInt(year) < new Date().getFullYear() || parseInt(year) > new Date().getFullYear() + 100) {
-                                    setErrors({ ...errors, subject: 'Please enter a valid date with a 4-digit year' })
-                                    return
+                                  const month = dateParts[1]
+                                  const day = dateParts[2]
+                                  // Check if all parts are present and year is valid
+                                  if (year.length === 4 && month.length === 2 && day.length === 2) {
+                                    const yearNum = parseInt(year)
+                                    if (isNaN(yearNum) || yearNum < new Date().getFullYear() || yearNum > new Date().getFullYear() + 100) {
+                                      setErrors({ ...errors, subject: 'Please enter a valid date with a 4-digit year' })
+                                      hasError = true
+                                    } else {
+                                      // Validate date is in the future (only if complete)
+                                      const selectedDate = new Date(newDate)
+                                      const today = new Date()
+                                      today.setHours(0, 0, 0, 0)
+                                      
+                                      if (selectedDate <= today) {
+                                        setErrors({ ...errors, subject: 'Exam date must be in the future' })
+                                        hasError = true
+                                      }
+                                    }
                                   }
                                 }
                               }
-                              const selectedDate = new Date(newDate)
-                              const today = new Date()
-                              today.setHours(0, 0, 0, 0)
                               
-                              if (selectedDate <= today) {
-                                setErrors({ ...errors, subject: 'Exam date must be in the future' })
-                                return
+                              // Sort dates chronologically only if date is complete and valid
+                              if (newDate && newDate.length === 10 && !hasError) {
+                                updatedDates.sort((a, b) => {
+                                  if (!a || a.length !== 10) return 1
+                                  if (!b || b.length !== 10) return -1
+                                  return new Date(a) - new Date(b)
+                                })
                               }
-                              
-                              const updatedDates = [...subjectExamDates]
-                              updatedDates[dateIndex] = newDate
-                              // Sort dates chronologically
-                              updatedDates.sort((a, b) => new Date(a) - new Date(b))
                               
                               setSubjects(subjects.map(s => 
                                 s.id === subject.id ? { ...s, examDates: updatedDates } : s
                               ))
-                              setErrors({ ...errors, subject: '' })
+                              
+                              // Clear errors if no error found
+                              if (!hasError) {
+                                setErrors({ ...errors, subject: '' })
+                              }
                             }}
                             min={new Date().toISOString().split('T')[0]}
                             max={new Date(new Date().getFullYear() + 100, 11, 31).toISOString().split('T')[0]}

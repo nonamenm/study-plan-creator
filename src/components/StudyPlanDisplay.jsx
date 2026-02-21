@@ -12,6 +12,7 @@ function StudyPlanDisplay({ studyPlan, onBack, onUpdateSubjects, onRefreshPlan }
   const [showBreakModal, setShowBreakModal] = useState(false)
   const [showLongBreakModal, setShowLongBreakModal] = useState(false)
   const [showConfetti, setShowConfetti] = useState(false)
+  const [expandedBreakdowns, setExpandedBreakdowns] = useState(new Set()) // Track which subject breakdowns are expanded
   
   // Pagination settings
   const daysPerPage = 7 // Show 7 days per page (one week)
@@ -95,6 +96,35 @@ function StudyPlanDisplay({ studyPlan, onBack, onUpdateSubjects, onRefreshPlan }
   const progressPercentage = studyPlan.dailySchedule.length > 0
     ? Math.round((completedDays.size / studyPlan.dailySchedule.length) * 100)
     : 0
+
+  // Calculate topic repetition counts across all days
+  const calculateTopicRepetitions = () => {
+    const topicCounts = new Map() // "subjectName-topicName" -> count
+    
+    studyPlan.dailySchedule.forEach(day => {
+      day.subjects.forEach(subject => {
+        if (subject.topics && subject.topics.length > 0) {
+          subject.topics.forEach(topic => {
+            const topicName = typeof topic === 'string' ? topic : (topic.name || '')
+            if (topicName) {
+              const key = `${subject.name}-${topicName}`
+              topicCounts.set(key, (topicCounts.get(key) || 0) + 1)
+            }
+          })
+        }
+      })
+    })
+    
+    return topicCounts
+  }
+
+  const topicRepetitions = calculateTopicRepetitions()
+  
+  // Helper function to get repetition count for a topic
+  const getTopicRepetitionCount = (subjectName, topicName) => {
+    const key = `${subjectName}-${topicName}`
+    return topicRepetitions.get(key) || 0
+  }
 
   const getPriorityColor = (priority, totalSubjects) => {
     if (!totalSubjects || totalSubjects <= 0) {
@@ -517,35 +547,89 @@ function StudyPlanDisplay({ studyPlan, onBack, onUpdateSubjects, onRefreshPlan }
                       ) : (
                         <div className="space-y-1">
                           {subjectMaterials.length > 0 ? (
-                            <div className="flex flex-wrap gap-2">
-                              {subjectMaterials.map((material, idx) => {
-                                const materialName = typeof material === 'string' ? material : (material.name || '')
-                                const timeType = typeof material === 'object' && material.timeType ? material.timeType : 'minutes'
-                                const materialMinutes = typeof material === 'object' && material.estimatedMinutes ? material.estimatedMinutes : null
-                                const pomodoroCount = typeof material === 'object' && material.pomodoroCount ? material.pomodoroCount : null
-                                
-                                return (
-                                  <span
-                                    key={idx}
-                                    className="px-2 py-1 bg-white border border-gray-300 rounded text-sm text-gray-700"
-                                    title={
-                                      timeType === 'pomodoro' && pomodoroCount 
-                                        ? `${pomodoroCount} pomodoro(s) = ${materialMinutes} minutes` 
-                                        : materialMinutes 
-                                        ? `Estimated: ${materialMinutes} minutes` 
-                                        : 'Time will be auto-calculated'
-                                    }
+                            <>
+                              <div className="flex flex-wrap gap-2">
+                                {subjectMaterials.map((material, idx) => {
+                                  const materialName = typeof material === 'string' ? material : (material.name || '')
+                                  const timeType = typeof material === 'object' && material.timeType ? material.timeType : 'minutes'
+                                  const materialMinutes = typeof material === 'object' && material.estimatedMinutes ? material.estimatedMinutes : null
+                                  const pomodoroCount = typeof material === 'object' && material.pomodoroCount ? material.pomodoroCount : null
+                                  
+                                  return (
+                                    <span
+                                      key={idx}
+                                      className="px-2 py-1 bg-white border border-gray-300 rounded text-sm text-gray-700"
+                                      title={
+                                        timeType === 'pomodoro' && pomodoroCount 
+                                          ? `${pomodoroCount} pomodoro(s) = ${materialMinutes} minutes` 
+                                          : materialMinutes 
+                                          ? `Estimated: ${materialMinutes} minutes` 
+                                          : 'Time will be auto-calculated'
+                                      }
+                                    >
+                                      {materialName}
+                                      {timeType === 'pomodoro' && pomodoroCount ? (
+                                        <span className="ml-1 text-xs text-gray-500">({pomodoroCount} pomodoro{pomodoroCount > 1 ? 's' : ''})</span>
+                                      ) : materialMinutes ? (
+                                        <span className="ml-1 text-xs text-gray-500">({materialMinutes}m)</span>
+                                      ) : null}
+                                    </span>
+                                  )
+                                })}
+                              </div>
+                              
+                              {/* Breakdown Dropdown */}
+                              <div className="mt-3">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <button
+                                    onClick={() => {
+                                      const subjectKey = subject.id || subject.name
+                                      const newExpanded = new Set(expandedBreakdowns)
+                                      if (newExpanded.has(subjectKey)) {
+                                        newExpanded.delete(subjectKey)
+                                      } else {
+                                        newExpanded.add(subjectKey)
+                                      }
+                                      setExpandedBreakdowns(newExpanded)
+                                    }}
+                                    className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
                                   >
-                                    {materialName}
-                                    {timeType === 'pomodoro' && pomodoroCount ? (
-                                      <span className="ml-1 text-xs text-gray-500">({pomodoroCount} pomodoro{pomodoroCount > 1 ? 's' : ''})</span>
-                                    ) : materialMinutes ? (
-                                      <span className="ml-1 text-xs text-gray-500">({materialMinutes}m)</span>
-                                    ) : null}
+                                    <span>Breakdown</span>
+                                    <span className={`transform transition-transform ${expandedBreakdowns.has(subject.id || subject.name) ? 'rotate-180' : ''}`}>
+                                      ▼
+                                    </span>
+                                  </button>
+                                  <span className="text-xs text-gray-500 italic">
+                                    See how often each topic appears in your calendar
                                   </span>
-                                )
-                              })}
-                            </div>
+                                </div>
+                                
+                                {expandedBreakdowns.has(subject.id || subject.name) && (
+                                  <div className="mt-2 p-3 bg-white border border-gray-200 rounded-lg">
+                                    <div className="text-xs font-semibold text-gray-600 mb-2">Topic Repetition in Calendar:</div>
+                                    <div className="space-y-2">
+                                      {subjectMaterials.map((material, idx) => {
+                                        const materialName = typeof material === 'string' ? material : (material.name || '')
+                                        const repetitionCount = getTopicRepetitionCount(subject.name || subject.id, materialName)
+                                        
+                                        return (
+                                          <div key={idx} className="flex items-center justify-between text-sm">
+                                            <span className="text-gray-700">{materialName}</span>
+                                            <span className={`px-2 py-1 rounded text-xs font-semibold ${
+                                              repetitionCount > 0 
+                                                ? 'bg-green-100 text-green-700 border border-green-300' 
+                                                : 'bg-gray-100 text-gray-500 border border-gray-300'
+                                            }`}>
+                                              {repetitionCount > 0 ? `${repetitionCount} time${repetitionCount > 1 ? 's' : ''}` : 'Not scheduled'}
+                                            </span>
+                                          </div>
+                                        )
+                                      })}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            </>
                           ) : (
                             <p className="text-sm text-gray-400 italic">
                               No study materials added yet. Click "Edit Materials" to add topics.
