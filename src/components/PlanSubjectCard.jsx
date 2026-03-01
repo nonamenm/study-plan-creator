@@ -58,7 +58,7 @@ function PlanSubjectCard({
               {subject.hours.toFixed(1)} hours total
             </div>
             <div className="text-xs text-gray-600">
-              ~{subject.minutesPerDay.toFixed(0)} min/day
+              ~{subject.minutesPerDay ? subject.minutesPerDay.toFixed(0) : '0'} min/day
             </div>
           </div>
           <button
