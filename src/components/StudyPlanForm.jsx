@@ -2,19 +2,48 @@ import { useState, useMemo } from 'react'
 import { generateStudyPlan } from '../utils/studyPlanGenerator'
 import StudyPlanDisplay from './StudyPlanDisplay'
 import defaultSubjects from '../data/defaultSubjects'
+import * as storage from '../utils/storage'
+import { validateSubjectName, validateExamDates, validatePriority, validateFormSubmission } from '../utils/formValidation'
+import SubjectCard from './SubjectCard'
+import MaterialsCard from './MaterialsCard'
 
 function StudyPlanForm() {
-  // Form state — pre-populated from defaultSubjects.js so you don't have to re-enter everything
-  const [currentStep, setCurrentStep] = useState(2)
-  const [numberOfSubjects, setNumberOfSubjects] = useState(String(defaultSubjects.length))
-  const [subjects, setSubjects] = useState(defaultSubjects)
+  const savedFormData = storage.getFormData()
+  const savedPlan = storage.getStudyPlan()
+
+  const initialSubjects = savedFormData?.subjects ?? defaultSubjects
+  const [currentStep, setCurrentStep] = useState(1)
+  const [numberOfSubjects, setNumberOfSubjects] = useState(savedFormData?.numberOfSubjects ?? String(defaultSubjects.length))
+  const [subjects, setSubjects] = useState(initialSubjects)
   const [newSubjectName, setNewSubjectName] = useState('')
-  const [newSubjectPriority, setNewSubjectPriority] = useState(defaultSubjects.length + 1)
+  const [newSubjectPriority, setNewSubjectPriority] = useState(initialSubjects.length + 1)
   const [newSubjectExamDates, setNewSubjectExamDates] = useState([''])
-  const [dailyHours, setDailyHours] = useState('')
-  const [learningStyle, setLearningStyle] = useState('')
+  const [dailyHours, setDailyHours] = useState(savedFormData?.dailyHours ?? '')
   const [errors, setErrors] = useState({})
-  const [studyPlan, setStudyPlan] = useState(null)
+  const [studyPlan, setStudyPlan] = useState(savedPlan ?? null)
+  const [collapsedItems, setCollapsedItems] = useState(new Set())
+
+  const toggleSubjectCollapse = (subjectId) => {
+    const key = `form-subject-${subjectId}`
+    setCollapsedItems(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) {
+        next.delete(key)
+      } else {
+        next.add(key)
+      }
+      return next
+    })
+  }
+
+  const persistFormData = (overrides = {}) => {
+    storage.saveFormData({
+      numberOfSubjects,
+      subjects,
+      dailyHours,
+      ...overrides,
+    })
+  }
 
   // Get available priorities (priorities not yet assigned)
   const availablePriorities = useMemo(() => {
@@ -46,64 +75,30 @@ function StudyPlanForm() {
     }
 
     // Validate subject name
-    if (!newSubjectName.trim()) {
-      setErrors({ ...errors, subject: 'Subject name is required' })
+    const nameError = validateSubjectName(newSubjectName, subjects)
+    if (nameError) {
+      setErrors({ ...errors, subject: nameError })
       return
     }
 
-    // Check for duplicate subject names
-    if (subjects.some(s => s.name.toLowerCase() === newSubjectName.trim().toLowerCase())) {
-      setErrors({ ...errors, subject: 'This subject already exists' })
+    // Validate exam dates
+    const examDateError = validateExamDates(newSubjectExamDates)
+    if (examDateError) {
+      setErrors({ ...errors, subject: examDateError })
       return
-    }
-
-    // Validate exam dates (filter out empty strings)
-    const validExamDates = newSubjectExamDates.filter(date => date.trim() !== '')
-    
-    if (validExamDates.length === 0) {
-      setErrors({ ...errors, subject: 'At least one exam date is required for this subject' })
-      return
-    }
-
-    // Validate all exam dates are in the future
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    
-    for (const examDate of validExamDates) {
-      const selectedDate = new Date(examDate)
-      if (selectedDate <= today) {
-        setErrors({ ...errors, subject: 'All exam dates must be in the future' })
-        return
-      }
     }
     
     // Sort exam dates chronologically
+    const validExamDates = newSubjectExamDates.filter(date => date.trim() !== '')
     const sortedExamDates = validExamDates.sort((a, b) => new Date(a) - new Date(b))
 
-    // Validate priority is available (recalculate directly to avoid stale state)
+    // Validate priority
     const total = parseInt(numberOfSubjects)
-    const priorityNum = parseInt(newSubjectPriority) // Ensure it's a number
-    
-    // Validate it's a valid number
-    if (isNaN(priorityNum)) {
-      setErrors({ ...errors, subject: 'Invalid priority selected' })
-      return
-    }
-    
-    // Get all used priorities as numbers (calculate fresh, don't rely on memoized values)
+    const priorityNum = parseInt(newSubjectPriority)
     const usedPriorities = new Set(subjects.map(s => parseInt(s.priority)))
-    
-    // Validate range and availability
-    const priorityInRange = priorityNum >= 1 && priorityNum <= total
-    const priorityNotUsed = !usedPriorities.has(priorityNum)
-    
-    if (!priorityInRange) {
-      setErrors({ ...errors, subject: `Priority must be between 1 and ${total}` })
-      return
-    }
-    
-    if (!priorityNotUsed) {
-      setErrors({ ...errors, subject: 'This priority is already assigned to another subject' })
+    const priorityError = validatePriority(priorityNum, total, usedPriorities)
+    if (priorityError) {
+      setErrors({ ...errors, subject: priorityError })
       return
     }
 
@@ -130,21 +125,38 @@ function StudyPlanForm() {
     
     setNewSubjectPriority(nextAvailable || 1)
     setErrors({ ...errors, subject: '', numberOfSubjects: '' })
+    persistFormData({ subjects: updatedSubjects })
   }
 
   // Remove a subject from the list
   const handleRemoveSubject = (id) => {
-    setSubjects(subjects.filter(s => s.id !== id))
+    const updatedSubjects = subjects.filter(s => s.id !== id)
+    setSubjects(updatedSubjects)
+    persistFormData({ subjects: updatedSubjects })
+  }
+
+  // Handle updating exam dates for a subject
+  const handleUpdateExamDates = (id, updatedDates) => {
+    setSubjects(subjects.map(s => 
+      s.id === id ? { ...s, examDates: updatedDates } : s
+    ))
+  }
+
+  // Handle updating materials for a subject
+  const handleUpdateMaterials = (id, updatedMaterials) => {
+    setSubjects(subjects.map(s => 
+      s.id === id ? { ...s, materials: updatedMaterials } : s
+    ))
   }
 
   // Update subject priority
   const handleUpdatePriority = (id, newPriority) => {
     const newPriorityNum = parseInt(newPriority)
+    const usedPriorities = new Set(subjects.filter(s => s.id !== id).map(s => parseInt(s.priority)))
+    const priorityError = validatePriority(newPriorityNum, parseInt(numberOfSubjects), usedPriorities)
     
-    // Check if new priority is already taken by another subject
-    const priorityTaken = subjects.some(s => s.id !== id && s.priority === newPriorityNum)
-    if (priorityTaken) {
-      setErrors({ ...errors, subject: 'This priority is already assigned to another subject' })
+    if (priorityError) {
+      setErrors({ ...errors, subject: priorityError })
       return
     }
 
@@ -179,29 +191,7 @@ function StudyPlanForm() {
   // Handle form submission
   const handleSubmit = (e) => {
     e.preventDefault()
-    const newErrors = {}
-
-    // Validation
-    if (!numberOfSubjects || parseInt(numberOfSubjects) <= 0) {
-      newErrors.numberOfSubjects = 'Please specify number of subjects'
-    }
-
-    if (subjects.length === 0) {
-      newErrors.subjects = 'Please add at least one subject'
-    } else if (subjects.length < parseInt(numberOfSubjects)) {
-      newErrors.subjects = `Please add all ${numberOfSubjects} subject(s)`
-    }
-
-    // Validate all subjects have exam dates
-    const subjectsWithoutDates = subjects.filter(s => !s.examDates || s.examDates.length === 0)
-    if (subjectsWithoutDates.length > 0) {
-      newErrors.subjects = 'All subjects must have at least one exam date'
-    }
-
-    if (!dailyHours || parseFloat(dailyHours) <= 0) {
-      newErrors.dailyHours = 'Daily study hours must be greater than 0'
-    }
-
+    const newErrors = validateFormSubmission({ numberOfSubjects, subjects, dailyHours })
     setErrors(newErrors)
 
     // If no errors, generate study plan
@@ -213,7 +203,9 @@ function StudyPlanForm() {
           parseFloat(dailyHours)
         )
         setStudyPlan(plan)
-        // Scroll to top to show the plan
+        persistFormData()
+        storage.saveStudyPlan(plan)
+        storage.clearProgress()
         window.scrollTo({ top: 0, behavior: 'smooth' })
       } catch (error) {
         setErrors({ ...newErrors, general: error.message || 'Failed to generate study plan. Please check your inputs.' })
@@ -223,8 +215,8 @@ function StudyPlanForm() {
 
   // Handle updating subjects from the plan display
   const handleUpdateSubjects = (updatedSubjects) => {
-    // Update the form's subjects state
     setSubjects(updatedSubjects)
+    persistFormData({ subjects: updatedSubjects })
   }
 
   // Handle refreshing the plan (regenerates with current subjects)
@@ -236,7 +228,9 @@ function StudyPlanForm() {
         parseFloat(dailyHours)
       )
       setStudyPlan(plan)
-      // Scroll to top to show updated plan
+      persistFormData()
+      storage.saveStudyPlan(plan)
+      storage.clearProgress()
       window.scrollTo({ top: 0, behavior: 'smooth' })
     } catch (error) {
       console.error('Error refreshing study plan:', error)
@@ -254,25 +248,6 @@ function StudyPlanForm() {
         onRefreshPlan={handleRefreshPlan}
       />
     )
-  }
-
-  // Get priority badge color based on priority number and total subjects
-  const getPriorityColor = (priority, totalSubjects) => {
-    if (!totalSubjects || totalSubjects <= 0) {
-      return 'bg-gray-100 text-gray-800 border-gray-300'
-    }
-    
-    // Calculate priority percentage (1 = highest, N = lowest)
-    const priorityPercent = (totalSubjects - priority + 1) / totalSubjects
-    
-    // Color gradient: Red (high priority) -> Yellow (medium) -> Blue (low priority)
-    if (priorityPercent >= 0.67) {
-      return 'bg-red-100 text-red-800 border-red-300' // Top third
-    } else if (priorityPercent >= 0.33) {
-      return 'bg-yellow-100 text-yellow-800 border-yellow-300' // Middle third
-    } else {
-      return 'bg-blue-100 text-blue-800 border-blue-300' // Bottom third
-    }
   }
 
   // Validate step 1 before moving to step 2
@@ -501,143 +476,20 @@ function StudyPlanForm() {
                   (_, i) => i + 1
                 ).filter(p => p === subject.priority || !subjects.some(s => s.id !== subject.id && s.priority === p))
                 
-                const subjectExamDates = subject.examDates || []
-                
                 return (
-                  <div
+                  <SubjectCard
                     key={subject.id}
-                    className="flex flex-col p-3 bg-gray-50 rounded-lg border border-gray-200 gap-3"
-                  >
-                    {/* Subject Header */}
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                      <div className="flex items-center gap-3 flex-1">
-                        <span className="font-medium text-gray-800">{subject.name}</span>
-                        <span className={`px-2 py-1 rounded text-xs font-semibold border ${getPriorityColor(subject.priority, parseInt(numberOfSubjects) || 0)}`}>
-                          Priority {subject.priority}
-                        </span>
-                        <span className="text-sm text-gray-600">
-                          {subjectExamDates.filter(d => d && d.trim() !== '').length > 0 
-                            ? `${subjectExamDates.filter(d => d && d.trim() !== '').length} exam${subjectExamDates.filter(d => d && d.trim() !== '').length > 1 ? 's' : ''}: ${subjectExamDates.filter(d => d && d.trim() !== '').map(d => new Date(d).toLocaleDateString()).join(', ')}`
-                            : 'No exam dates set'}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <select
-                          value={subject.priority}
-                          onChange={(e) => handleUpdatePriority(subject.id, e.target.value)}
-                          className="px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-                        >
-                          {availablePrioritiesForSubject.map(priority => (
-                            <option key={priority} value={priority}>
-                              Priority {priority}
-                            </option>
-                          ))}
-                        </select>
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveSubject(subject.id)}
-                          className="px-3 py-1 text-sm bg-red-500 text-white rounded hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-1 transition-colors"
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    </div>
-                    
-                    {/* Exam Dates */}
-                    <div className="space-y-2 pl-2 border-l-2 border-gray-300">
-                      <div className="text-xs font-medium text-gray-600">Exam Dates:</div>
-                      {subjectExamDates.map((date, dateIndex) => (
-                        <div key={dateIndex} className="flex gap-2 items-center">
-                          <input
-                            type="date"
-                            value={date}
-                            onChange={(e) => {
-                              const newDate = e.target.value
-                              
-                              // Always update the date value first (allow typing)
-                              const updatedDates = [...subjectExamDates]
-                              updatedDates[dateIndex] = newDate
-                              
-                              // Only validate if date is complete (has all parts)
-                              let hasError = false
-                              if (newDate && newDate.length === 10) {
-                                const dateParts = newDate.split('-')
-                                if (dateParts.length === 3) {
-                                  const year = dateParts[0]
-                                  const month = dateParts[1]
-                                  const day = dateParts[2]
-                                  // Check if all parts are present and year is valid
-                                  if (year.length === 4 && month.length === 2 && day.length === 2) {
-                                    const yearNum = parseInt(year)
-                                    if (isNaN(yearNum) || yearNum < new Date().getFullYear() || yearNum > new Date().getFullYear() + 100) {
-                                      setErrors({ ...errors, subject: 'Please enter a valid date with a 4-digit year' })
-                                      hasError = true
-                                    } else {
-                                      // Validate date is in the future (only if complete)
-                                      const selectedDate = new Date(newDate)
-                                      const today = new Date()
-                                      today.setHours(0, 0, 0, 0)
-                                      
-                                      if (selectedDate <= today) {
-                                        setErrors({ ...errors, subject: 'Exam date must be in the future' })
-                                        hasError = true
-                                      }
-                                    }
-                                  }
-                                }
-                              }
-                              
-                              // Sort dates chronologically only if date is complete and valid
-                              if (newDate && newDate.length === 10 && !hasError) {
-                                updatedDates.sort((a, b) => {
-                                  if (!a || a.length !== 10) return 1
-                                  if (!b || b.length !== 10) return -1
-                                  return new Date(a) - new Date(b)
-                                })
-                              }
-                              
-                              setSubjects(subjects.map(s => 
-                                s.id === subject.id ? { ...s, examDates: updatedDates } : s
-                              ))
-                              
-                              // Clear errors if no error found
-                              if (!hasError) {
-                                setErrors({ ...errors, subject: '' })
-                              }
-                            }}
-                            min={new Date().toISOString().split('T')[0]}
-                            max={new Date(new Date().getFullYear() + 100, 11, 31).toISOString().split('T')[0]}
-                            className="flex-1 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const updatedDates = subjectExamDates.filter((_, i) => i !== dateIndex)
-                              setSubjects(subjects.map(s => 
-                                s.id === subject.id ? { ...s, examDates: updatedDates } : s
-                              ))
-                            }}
-                            className="px-2 py-1 text-xs bg-red-500 text-white rounded hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-1 transition-colors"
-                            title="Remove this exam date"
-                          >
-                            ×
-                          </button>
-                        </div>
-                      ))}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const updatedDates = [...subjectExamDates, '']
-                          setSubjects(subjects.map(s => 
-                            s.id === subject.id ? { ...s, examDates: updatedDates } : s
-                          ))
-                        }}
-                        className="px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-1 transition-colors"
-                      >
-                        + Add Exam Date
-                      </button>
-                    </div>
-                  </div>
+                    subject={subject}
+                    numberOfSubjects={numberOfSubjects}
+                    onUpdatePriority={handleUpdatePriority}
+                    onRemove={handleRemoveSubject}
+                    onUpdateExamDates={handleUpdateExamDates}
+                    isCollapsed={collapsedItems.has(`form-subject-${subject.id}`)}
+                    onToggleCollapse={toggleSubjectCollapse}
+                    availablePriorities={availablePrioritiesForSubject}
+                    errors={errors}
+                    setErrors={setErrors}
+                  />
                 )
               })}
           </div>
@@ -683,28 +535,6 @@ function StudyPlanForm() {
             </p>
           </div>
 
-          {/* Learning Style Section (Optional) */}
-          <div className="mb-6">
-            <label htmlFor="learningStyle" className="block text-lg font-semibold text-gray-700 mb-2">
-              Learning Style <span className="text-gray-400 text-sm">(Optional)</span>
-            </label>
-            <select
-              id="learningStyle"
-              value={learningStyle}
-              onChange={(e) => setLearningStyle(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            >
-              <option value="">Select your learning style</option>
-              <option value="Visual">Visual (learn by seeing)</option>
-              <option value="Auditory">Auditory (learn by hearing)</option>
-              <option value="Reading/Writing">Reading/Writing (learn by reading/writing)</option>
-              <option value="Kinesthetic">Kinesthetic (learn by doing)</option>
-            </select>
-            <p className="text-gray-500 text-sm mt-1">
-              This will be used for future study method suggestions
-            </p>
-          </div>
-
           {/* Next Button for Step 1 */}
           <div className="flex justify-end">
             <button
@@ -731,207 +561,17 @@ function StudyPlanForm() {
           {/* Subjects List with Materials */}
           {subjects.length > 0 ? (
             <div className="space-y-4">
-              {subjects.map((subject) => {
-                const subjectExamDates = subject.examDates || []
-                
-                return (
-                  <div key={subject.id} className="p-4 border border-gray-300 rounded-lg bg-gray-50">
-                    {/* Subject Header */}
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center gap-3">
-                        <span className={`px-3 py-1 rounded text-sm font-semibold border ${getPriorityColor(subject.priority, parseInt(numberOfSubjects))}`}>
-                          P{subject.priority}
-                        </span>
-                        <h3 className="text-lg font-semibold text-gray-800">{subject.name}</h3>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveSubject(subject.id)}
-                        className="px-3 py-1 text-sm bg-red-500 text-white rounded hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500 transition-colors"
-                      >
-                        Remove
-                      </button>
-                    </div>
-                    
-                    {/* Study Materials */}
-                    <div className="space-y-2 pl-2 border-l-2 border-blue-300 mt-3">
-                      <div className="text-sm font-medium text-gray-700 mb-2">Study Materials/Topics:</div>
-                      {(subject.materials || []).map((material, materialIndex) => {
-                        // Handle both old format (string) and new format (object)
-                        const materialName = typeof material === 'string' ? material : (material.name || '')
-                        // Ensure timeType is explicitly set, default to empty string
-                        const timeType = typeof material === 'object' && material.timeType !== undefined && material.timeType !== null 
-                          ? material.timeType 
-                          : ''
-                        const materialValue = timeType === 'pomodoro' && typeof material === 'object'
-                          ? (material.pomodoroCount || '')
-                          : (timeType === 'minutes' && typeof material === 'object' && material.estimatedMinutes ? material.estimatedMinutes : '')
-                        
-                        return (
-                          <div key={materialIndex} className="flex flex-col gap-2">
-                            <div className="flex gap-2 items-center">
-                              <input
-                                type="text"
-                                value={materialName}
-                                onChange={(e) => {
-                                  const updatedMaterials = [...(subject.materials || [])]
-                                  const currentMaterial = updatedMaterials[materialIndex]
-                                  if (typeof currentMaterial === 'string') {
-                                    updatedMaterials[materialIndex] = e.target.value
-                                  } else {
-                                    updatedMaterials[materialIndex] = {
-                                      ...currentMaterial,
-                                      name: e.target.value
-                                    }
-                                  }
-                                  setSubjects(subjects.map(s => 
-                                    s.id === subject.id ? { ...s, materials: updatedMaterials } : s
-                                  ))
-                                }}
-                                placeholder="Topic name"
-                                className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-                              />
-                              <select
-                                value={timeType}
-                                onChange={(e) => {
-                                  const updatedMaterials = [...(subject.materials || [])]
-                                  const currentMaterial = updatedMaterials[materialIndex]
-                                  const newTimeType = e.target.value
-                                  if (typeof currentMaterial === 'string') {
-                                    updatedMaterials[materialIndex] = {
-                                      name: currentMaterial,
-                                      timeType: newTimeType,
-                                      estimatedMinutes: '',
-                                      pomodoroCount: ''
-                                    }
-                                  } else {
-                                    updatedMaterials[materialIndex] = {
-                                      ...currentMaterial,
-                                      timeType: newTimeType,
-                                      estimatedMinutes: newTimeType === 'minutes' ? currentMaterial.estimatedMinutes : '',
-                                      pomodoroCount: newTimeType === 'pomodoro' ? currentMaterial.pomodoroCount : ''
-                                    }
-                                  }
-                                  setSubjects(subjects.map(s => 
-                                    s.id === subject.id ? { ...s, materials: updatedMaterials } : s
-                                  ))
-                                }}
-                                className="px-2 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white"
-                              >
-                                <option value="">Select option</option>
-                                <option value="minutes">Minutes</option>
-                                <option value="pomodoro">Pomodoro</option>
-                              </select>
-                              {timeType === 'minutes' && (
-                                <>
-                                  <input
-                                    type="number"
-                                    value={materialValue}
-                                    onChange={(e) => {
-                                      const updatedMaterials = [...(subject.materials || [])]
-                                      const currentMaterial = updatedMaterials[materialIndex]
-                                      const minutes = e.target.value ? parseInt(e.target.value) : ''
-                                      if (typeof currentMaterial === 'string') {
-                                        updatedMaterials[materialIndex] = {
-                                          name: currentMaterial,
-                                          timeType: 'minutes',
-                                          estimatedMinutes: minutes
-                                        }
-                                      } else {
-                                        updatedMaterials[materialIndex] = {
-                                          ...currentMaterial,
-                                          estimatedMinutes: minutes
-                                        }
-                                      }
-                                      setSubjects(subjects.map(s => 
-                                        s.id === subject.id ? { ...s, materials: updatedMaterials } : s
-                                      ))
-                                    }}
-                                    placeholder="Min"
-                                    min="1"
-                                    className="w-24 px-2 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-                                  />
-                                  <span className="text-xs text-gray-500">min</span>
-                                </>
-                              )}
-                              {timeType === 'pomodoro' && (
-                                <>
-                                  <input
-                                    type="number"
-                                    value={materialValue}
-                                    onChange={(e) => {
-                                      const updatedMaterials = [...(subject.materials || [])]
-                                      const currentMaterial = updatedMaterials[materialIndex]
-                                      const pomodoroCount = e.target.value ? parseInt(e.target.value) : ''
-                                      if (typeof currentMaterial === 'string') {
-                                        updatedMaterials[materialIndex] = {
-                                          name: currentMaterial,
-                                          timeType: 'pomodoro',
-                                          pomodoroCount: pomodoroCount,
-                                          estimatedMinutes: pomodoroCount ? pomodoroCount * 25 : ''
-                                        }
-                                      } else {
-                                        updatedMaterials[materialIndex] = {
-                                          ...currentMaterial,
-                                          pomodoroCount: pomodoroCount,
-                                          estimatedMinutes: pomodoroCount ? pomodoroCount * 25 : ''
-                                        }
-                                      }
-                                      setSubjects(subjects.map(s => 
-                                        s.id === subject.id ? { ...s, materials: updatedMaterials } : s
-                                      ))
-                                    }}
-                                    placeholder="Count"
-                                    min="1"
-                                    className="w-24 px-2 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-                                  />
-                                  <span className="text-xs text-gray-500">pomodoro(s)</span>
-                                </>
-                              )}
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const updatedMaterials = (subject.materials || []).filter((_, i) => i !== materialIndex)
-                                  setSubjects(subjects.map(s => 
-                                    s.id === subject.id ? { ...s, materials: updatedMaterials } : s
-                                  ))
-                                }}
-                                className="px-3 py-2 text-sm bg-red-500 text-white rounded hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-1 transition-colors"
-                                title="Remove this material"
-                              >
-                                ×
-                              </button>
-                            </div>
-                            {timeType === 'pomodoro' && materialValue && (
-                              <p className="text-xs text-gray-500 ml-2">
-                                = {parseInt(materialValue) * 25} minutes (1 pomodoro = 25 min)
-                              </p>
-                            )}
-                          </div>
-                        )
-                      })}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const updatedMaterials = [...(subject.materials || []), { name: '', timeType: '', estimatedMinutes: '', pomodoroCount: '' }]
-                          setSubjects(subjects.map(s => 
-                            s.id === subject.id ? { ...s, materials: updatedMaterials } : s
-                          ))
-                        }}
-                        className="px-3 py-2 text-sm bg-green-600 text-white rounded hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-1 transition-colors"
-                      >
-                        + Add Material/Topic
-                      </button>
-                      {(!subject.materials || subject.materials.length === 0) && (
-                        <p className="text-xs text-gray-400 italic">No materials added yet. Add topics you need to study.</p>
-                      )}
-                      <p className="text-xs text-gray-500 mt-2">
-                        <strong>Tip:</strong> Specify estimated time per topic (minutes or pomodoros). 1 pomodoro = 25 minutes. If left blank, time will be auto-calculated.
-                      </p>
-                    </div>
-                  </div>
-                )
-              })}
+              {subjects.map((subject) => (
+                <MaterialsCard
+                  key={subject.id}
+                  subject={subject}
+                  numberOfSubjects={numberOfSubjects}
+                  onUpdateMaterials={handleUpdateMaterials}
+                  onRemove={handleRemoveSubject}
+                  isCollapsed={collapsedItems.has(`form-subject-${subject.id}`)}
+                  onToggleCollapse={toggleSubjectCollapse}
+                />
+              ))}
             </div>
           ) : (
             <p className="text-gray-500 text-sm italic">
@@ -939,10 +579,13 @@ function StudyPlanForm() {
             </p>
           )}
 
-          {/* General Error Display */}
-          {errors.general && (
-            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
-              <p className="text-red-600 font-medium">{errors.general}</p>
+          {/* Error Display */}
+          {(errors.general || errors.dailyHours || errors.numberOfSubjects || errors.subjects) && (
+            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg space-y-1">
+              {errors.general && <p className="text-red-600 font-medium">{errors.general}</p>}
+              {errors.dailyHours && <p className="text-red-600 font-medium">{errors.dailyHours}</p>}
+              {errors.numberOfSubjects && <p className="text-red-600 font-medium">{errors.numberOfSubjects}</p>}
+              {errors.subjects && <p className="text-red-600 font-medium">{errors.subjects}</p>}
             </div>
           )}
 

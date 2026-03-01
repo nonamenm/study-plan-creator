@@ -1,11 +1,15 @@
 import { useState, useEffect, useRef } from 'react'
 import PropTypes from 'prop-types'
+import * as storage from '../utils/storage'
+import PlanSubjectCard from './PlanSubjectCard'
+import BreakModal from './BreakModal'
+import DayCompleteModal from './DayCompleteModal'
 
 function StudyPlanDisplay({ studyPlan, onBack, onUpdateSubjects, onRefreshPlan }) {
-  const [selectedDay, setSelectedDay] = useState(null)
-  const [completedDays, setCompletedDays] = useState(new Set())
-  const [completedTopics, setCompletedTopics] = useState(new Set()) // Track completed topics: "day-subject-topicIndex"
-  const [completedPomodoros, setCompletedPomodoros] = useState(new Set()) // Track completed pomodoros: "day-subject-topicIndex-pomodoroNumber"
+  const savedProgress = storage.getProgress()
+  const [completedDays, setCompletedDays] = useState(new Set(savedProgress?.completedDays ?? []))
+  const [completedTopics, setCompletedTopics] = useState(new Set(savedProgress?.completedTopics ?? []))
+  const [completedPomodoros, setCompletedPomodoros] = useState(new Set(savedProgress?.completedPomodoros ?? []))
   const [currentPage, setCurrentPage] = useState(1)
   const [editingSubjectId, setEditingSubjectId] = useState(null)
   const [editingMaterials, setEditingMaterials] = useState([])
@@ -14,16 +18,16 @@ function StudyPlanDisplay({ studyPlan, onBack, onUpdateSubjects, onRefreshPlan }
   const [showDayCompleteModal, setShowDayCompleteModal] = useState(false)
   const [completedDayNumber, setCompletedDayNumber] = useState(null)
   const [dayCompleteMessage, setDayCompleteMessage] = useState('')
-  const [expandedBreakdowns, setExpandedBreakdowns] = useState(new Set()) // Track which subject breakdowns are expanded
+  const [collapsedItems, setCollapsedItems] = useState(new Set())
   
   // Timer state for 5-minute break
   const [breakTimerStarted, setBreakTimerStarted] = useState(false)
-  const [breakTimeRemaining, setBreakTimeRemaining] = useState(10) // 10 seconds for testing (normally 5 * 60)
+  const [breakTimeRemaining, setBreakTimeRemaining] = useState(5 * 60)
   const breakTimerIntervalRef = useRef(null)
   
   // Timer state for 30-minute break
   const [longBreakTimerStarted, setLongBreakTimerStarted] = useState(false)
-  const [longBreakTimeRemaining, setLongBreakTimeRemaining] = useState(10) // 10 seconds for testing (normally 30 * 60)
+  const [longBreakTimeRemaining, setLongBreakTimeRemaining] = useState(30 * 60)
   const longBreakTimerIntervalRef = useRef(null)
   
   // Motivational messages for day completion
@@ -88,7 +92,7 @@ function StudyPlanDisplay({ studyPlan, onBack, onUpdateSubjects, onRefreshPlan }
   useEffect(() => {
     if (!showBreakModal) {
       setBreakTimerStarted(false)
-      setBreakTimeRemaining(10) // Reset to 10 seconds for testing (normally 5 * 60)
+      setBreakTimeRemaining(5 * 60)
       if (breakTimerIntervalRef.current) {
         clearInterval(breakTimerIntervalRef.current)
         breakTimerIntervalRef.current = null
@@ -130,13 +134,21 @@ function StudyPlanDisplay({ studyPlan, onBack, onUpdateSubjects, onRefreshPlan }
   useEffect(() => {
     if (!showLongBreakModal) {
       setLongBreakTimerStarted(false)
-      setLongBreakTimeRemaining(10) // Reset to 10 seconds for testing (normally 30 * 60)
+      setLongBreakTimeRemaining(30 * 60)
       if (longBreakTimerIntervalRef.current) {
         clearInterval(longBreakTimerIntervalRef.current)
         longBreakTimerIntervalRef.current = null
       }
     }
   }, [showLongBreakModal])
+
+  useEffect(() => {
+    storage.saveProgress({
+      completedDays: Array.from(completedDays),
+      completedTopics: Array.from(completedTopics),
+      completedPomodoros: Array.from(completedPomodoros),
+    })
+  }, [completedDays, completedTopics, completedPomodoros])
 
   // Format time as MM:SS
   const formatTime = (seconds) => {
@@ -462,168 +474,43 @@ function StudyPlanDisplay({ studyPlan, onBack, onUpdateSubjects, onRefreshPlan }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-8 relative">
-      {/* 5 Minute Break Modal */}
-      {showBreakModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={() => setShowBreakModal(false)}>
-          <div className="bg-white rounded-lg p-8 max-w-md mx-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <div className="text-center">
-              <h2 className="text-2xl font-bold text-gray-800 mb-2">Great Work!</h2>
-              <p className="text-lg text-gray-600 mb-4">Take a break</p>
-              
-              {/* Timer Display */}
-              <div className="mb-6">
-                {breakTimerStarted ? (
-                  <div>
-                    <div className={`text-5xl font-bold mb-2 ${
-                      breakTimeRemaining === 0 
-                        ? 'text-green-600' 
-                        : breakTimeRemaining <= 60 
-                        ? 'text-orange-600' 
-                        : 'text-blue-600'
-                    }`}>
-                      {formatTime(breakTimeRemaining)}
-                    </div>
-                    {breakTimeRemaining === 0 && (
-                      <div className="mb-4">
-                        <p className="text-xl font-bold text-green-600 mb-2">Break Complete!</p>
-                        <p className="text-lg font-semibold text-orange-600">Get yo ass back to studying</p>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="text-3xl font-semibold text-gray-400 mb-4">
-                    {formatTime(breakTimeRemaining)}
-                  </div>
-                )}
-              </div>
+      <BreakModal
+        isOpen={showBreakModal}
+        onClose={() => setShowBreakModal(false)}
+        duration={5 * 60}
+        isLongBreak={false}
+        timerStarted={breakTimerStarted}
+        timeRemaining={breakTimeRemaining}
+        onStartTimer={() => setBreakTimerStarted(true)}
+        onResetTimer={() => {
+          setBreakTimerStarted(false)
+          setBreakTimeRemaining(5 * 60)
+        }}
+      />
 
-              {/* Action Buttons */}
-              <div className="flex gap-3 justify-center">
-                {!breakTimerStarted ? (
-                  <button
-                    onClick={() => setBreakTimerStarted(true)}
-                    className="px-6 py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
-                  >
-                    Start Break
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => setShowBreakModal(false)}
-                    className="px-6 py-3 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 transition-colors"
-                  >
-                    Continue Studying
-                  </button>
-                )}
-                {breakTimerStarted && breakTimeRemaining > 0 && (
-                  <button
-                    onClick={() => {
-                      setBreakTimerStarted(false)
-                      setBreakTimeRemaining(10) // Reset to 10 seconds for testing (normally 5 * 60)
-                    }}
-                    className="px-6 py-3 bg-gray-500 text-white rounded-lg font-semibold hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500 transition-colors"
-                  >
-                    Reset
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <BreakModal
+        isOpen={showLongBreakModal}
+        onClose={() => setShowLongBreakModal(false)}
+        duration={30 * 60}
+        isLongBreak={true}
+        timerStarted={longBreakTimerStarted}
+        timeRemaining={longBreakTimeRemaining}
+        onStartTimer={() => setLongBreakTimerStarted(true)}
+        onResetTimer={() => {
+          setLongBreakTimerStarted(false)
+          setLongBreakTimeRemaining(30 * 60)
+        }}
+      />
 
-      {/* 30 Minute Break Modal */}
-      {showLongBreakModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={() => setShowLongBreakModal(false)}>
-          <div className="bg-gradient-to-br from-yellow-100 to-orange-100 rounded-lg p-8 max-w-md mx-4 shadow-xl border-4 border-yellow-400" onClick={(e) => e.stopPropagation()}>
-            <div className="text-center">
-              <h2 className="text-3xl font-bold text-gray-800 mb-2">Congratulations!</h2>
-              <p className="text-xl text-gray-700 mb-2 font-semibold">You&#39;ve completed 5 pomodoros!</p>
-              <p className="text-lg text-gray-600 mb-4">Take a well-deserved break</p>
-              
-              {/* Timer Display */}
-              <div className="mb-6">
-                {longBreakTimerStarted ? (
-                  <div>
-                    <div className={`text-5xl font-bold mb-2 ${
-                      longBreakTimeRemaining === 0 
-                        ? 'text-green-600' 
-                        : longBreakTimeRemaining <= 60 
-                        ? 'text-orange-600' 
-                        : 'text-blue-600'
-                    }`}>
-                      {formatTime(longBreakTimeRemaining)}
-                    </div>
-                    {longBreakTimeRemaining === 0 && (
-                      <div className="mb-4">
-                        <p className="text-xl font-bold text-green-600 mb-2">Break Complete!</p>
-                        <p className="text-lg font-semibold text-orange-600">Get yo ass back to studying</p>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="text-3xl font-semibold text-gray-400 mb-4">
-                    {formatTime(longBreakTimeRemaining)}
-                  </div>
-                )}
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex gap-3 justify-center">
-                {!longBreakTimerStarted ? (
-                  <button
-                    onClick={() => setLongBreakTimerStarted(true)}
-                    className="px-6 py-3 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 transition-colors"
-                  >
-                    Start Break
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => setShowLongBreakModal(false)}
-                    className="px-6 py-3 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 transition-colors"
-                  >
-                    Continue Studying
-                  </button>
-                )}
-                {longBreakTimerStarted && longBreakTimeRemaining > 0 && (
-                  <button
-                    onClick={() => {
-                      setLongBreakTimerStarted(false)
-                      setLongBreakTimeRemaining(10) // Reset to 10 seconds for testing (normally 30 * 60)
-                    }}
-                    className="px-6 py-3 bg-gray-500 text-white rounded-lg font-semibold hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500 transition-colors"
-                  >
-                    Reset
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Day Completion Modal */}
-      {showDayCompleteModal && completedDayNumber !== null && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={() => {
+      <DayCompleteModal
+        isOpen={showDayCompleteModal && completedDayNumber !== null}
+        onClose={() => {
           setShowDayCompleteModal(false)
           setDayCompleteMessage('')
-        }}>
-          <div className="bg-gradient-to-br from-green-100 to-emerald-100 rounded-lg p-8 max-w-md mx-4 shadow-xl border-4 border-green-400" onClick={(e) => e.stopPropagation()}>
-            <div className="text-center">
-              <h2 className="text-3xl font-bold text-gray-800 mb-2">Day {completedDayNumber} Complete!</h2>
-              <p className="text-xl text-gray-700 mb-2 font-semibold">{dayCompleteMessage || 'Well done keep going, there\'s not long left now'}</p>
-              <button
-                onClick={() => {
-                  setShowDayCompleteModal(false)
-                  setDayCompleteMessage('')
-                }}
-                className="px-6 py-3 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 transition-colors mt-4"
-              >
-                Continue
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+        }}
+        dayNumber={completedDayNumber || 0}
+        message={dayCompleteMessage}
+      />
 
       <div className="container mx-auto px-4 max-w-6xl">
         {/* Header */}
@@ -701,353 +588,43 @@ function StudyPlanDisplay({ studyPlan, onBack, onUpdateSubjects, onRefreshPlan }
             {studyPlan.subjects
               .sort((a, b) => a.priority - b.priority)
               .map((subject) => {
-                const isEditing = editingSubjectId === subject.id
-                const subjectMaterials = subject.materials || []
-                
+                const subjectKey = subject.id || subject.name
+                const planSubjectKey = `plan-subject-${subjectKey}`
+                const isCollapsed = collapsedItems.has(planSubjectKey)
+                const isEditing = editingSubjectId === subjectKey
+
                 return (
-                  <div
-                    key={subject.id || subject.name}
-                    className="p-4 bg-gray-50 rounded-lg border border-gray-200"
-                  >
-                    {/* Subject Header */}
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center gap-3 flex-1">
-                        <span className="font-medium text-gray-800">{subject.name}</span>
-                        <span className={`px-2 py-1 rounded text-xs font-semibold border ${getPriorityColor(subject.priority, studyPlan.summary.subjectsCount)}`}>
-                          Priority {subject.priority}
-                        </span>
-                        <span className="text-sm text-gray-600">
-                          {subject.examDates.length} exam{subject.examDates.length > 1 ? 's' : ''}: {subject.examDates.map(d => new Date(d).toLocaleDateString()).join(', ')}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <div className="text-right">
-                          <div className="font-semibold text-gray-800 text-sm">
-                            {subject.hours.toFixed(1)} hours total
-                          </div>
-                          <div className="text-xs text-gray-600">
-                            ~{subject.minutesPerDay.toFixed(0)} min/day
-                          </div>
-                        </div>
-                        <button
-                          onClick={() => {
-                            if (isEditing) {
-                              setEditingSubjectId(null)
-                              setEditingMaterials([])
-                            } else {
-                              setEditingSubjectId(subject.id || subject.name)
-                              setEditingMaterials([...subjectMaterials])
-                            }
-                          }}
-                          className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 transition-colors"
-                        >
-                          {isEditing ? 'Done' : 'Edit Materials'}
-                        </button>
-                      </div>
-                    </div>
-                    
-                    {/* Study Materials Section */}
-                    <div className="mt-3 pl-2 border-l-2 border-blue-300">
-                      <div className="text-xs font-medium text-gray-600 mb-2">
-                        Study Materials/Topics:
-                      </div>
-                      
-                      {isEditing ? (
-                        <div className="space-y-2">
-                          {editingMaterials.map((material, idx) => {
-                            // Handle both old format (string) and new format (object)
-                            const materialName = typeof material === 'string' ? material : (material.name || '')
-                            // Ensure timeType is explicitly set, default to empty string
-                            const timeType = typeof material === 'object' && material.timeType !== undefined && material.timeType !== null 
-                              ? material.timeType 
-                              : ''
-                            const materialValue = timeType === 'pomodoro' && typeof material === 'object'
-                              ? (material.pomodoroCount || '')
-                              : (timeType === 'minutes' && typeof material === 'object' && material.estimatedMinutes ? material.estimatedMinutes : '')
-                            
-                            return (
-                              <div key={idx} className="flex flex-col gap-2">
-                                <div className="flex gap-2 items-center">
-                                  <input
-                                    type="text"
-                                    value={materialName}
-                                    onChange={(e) => {
-                                      const updated = [...editingMaterials]
-                                      const currentMaterial = updated[idx]
-                                      if (typeof currentMaterial === 'string') {
-                                        updated[idx] = e.target.value
-                                      } else {
-                                        updated[idx] = {
-                                          ...currentMaterial,
-                                          name: e.target.value
-                                        }
-                                      }
-                                      setEditingMaterials(updated)
-                                    }}
-                                    placeholder="Topic name"
-                                    className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                  />
-                                  <select
-                                    value={timeType}
-                                    onChange={(e) => {
-                                      const updated = [...editingMaterials]
-                                      const currentMaterial = updated[idx]
-                                      const newTimeType = e.target.value
-                                      if (typeof currentMaterial === 'string') {
-                                        updated[idx] = {
-                                          name: currentMaterial,
-                                          timeType: newTimeType,
-                                          estimatedMinutes: '',
-                                          pomodoroCount: ''
-                                        }
-                                      } else {
-                                        updated[idx] = {
-                                          ...currentMaterial,
-                                          timeType: newTimeType,
-                                          estimatedMinutes: newTimeType === 'minutes' ? currentMaterial.estimatedMinutes : '',
-                                          pomodoroCount: newTimeType === 'pomodoro' ? currentMaterial.pomodoroCount : ''
-                                        }
-                                      }
-                                      setEditingMaterials(updated)
-                                    }}
-                                    className="px-2 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                                  >
-                                    <option value="">Select option</option>
-                                    <option value="minutes">Minutes</option>
-                                    <option value="pomodoro">Pomodoro</option>
-                                  </select>
-                                  {timeType === 'minutes' && (
-                                    <>
-                                      <input
-                                        type="number"
-                                        value={materialValue}
-                                        onChange={(e) => {
-                                          const updated = [...editingMaterials]
-                                          const currentMaterial = updated[idx]
-                                          const minutes = e.target.value ? parseInt(e.target.value) : ''
-                                          if (typeof currentMaterial === 'string') {
-                                            updated[idx] = {
-                                              name: currentMaterial,
-                                              timeType: 'minutes',
-                                              estimatedMinutes: minutes
-                                            }
-                                          } else {
-                                            updated[idx] = {
-                                              ...currentMaterial,
-                                              estimatedMinutes: minutes
-                                            }
-                                          }
-                                          setEditingMaterials(updated)
-                                        }}
-                                        placeholder="Min"
-                                        min="1"
-                                        className="w-20 px-2 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                      />
-                                      <span className="text-xs text-gray-500">min</span>
-                                    </>
-                                  )}
-                                  {timeType === 'pomodoro' && (
-                                    <>
-                                      <input
-                                        type="number"
-                                        value={materialValue}
-                                        onChange={(e) => {
-                                          const updated = [...editingMaterials]
-                                          const currentMaterial = updated[idx]
-                                          const pomodoroCount = e.target.value ? parseInt(e.target.value) : ''
-                                          if (typeof currentMaterial === 'string') {
-                                            updated[idx] = {
-                                              name: currentMaterial,
-                                              timeType: 'pomodoro',
-                                              pomodoroCount: pomodoroCount,
-                                              estimatedMinutes: pomodoroCount ? pomodoroCount * 25 : ''
-                                            }
-                                          } else {
-                                            updated[idx] = {
-                                              ...currentMaterial,
-                                              pomodoroCount: pomodoroCount,
-                                              estimatedMinutes: pomodoroCount ? pomodoroCount * 25 : ''
-                                            }
-                                          }
-                                          setEditingMaterials(updated)
-                                        }}
-                                        placeholder="Count"
-                                        min="1"
-                                        className="w-20 px-2 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                      />
-                                      <span className="text-xs text-gray-500">pomodoro(s)</span>
-                                    </>
-                                  )}
-                                  <button
-                                    onClick={() => {
-                                      const updated = editingMaterials.filter((_, i) => i !== idx)
-                                      setEditingMaterials(updated)
-                                    }}
-                                    className="px-2 py-2 text-sm bg-red-500 text-white rounded hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500 transition-colors"
-                                  >
-                                    ×
-                                  </button>
-                                </div>
-                                {timeType === 'pomodoro' && materialValue && (
-                                  <p className="text-xs text-gray-500 ml-2">
-                                    = {parseInt(materialValue) * 25} minutes (1 pomodoro = 25 min)
-                                  </p>
-                                )}
-                              </div>
-                            )
-                          })}
-                          <div className="flex gap-2">
-                            <button
-                              onClick={() => setEditingMaterials([...editingMaterials, { name: '', timeType: '', estimatedMinutes: '', pomodoroCount: '' }])}
-                              className="px-3 py-2 text-sm bg-green-600 text-white rounded hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 transition-colors"
-                            >
-                              + Add Topic
-                            </button>
-                            <button
-                              onClick={() => {
-                                // Update the subject in studyPlan
-                                if (onUpdateSubjects) {
-                                  // Filter out empty materials and convert strings to objects if needed
-                                  const cleanedMaterials = editingMaterials
-                                    .filter(m => {
-                                      if (typeof m === 'string') {
-                                        return m.trim() !== ''
-                                      }
-                                      return m.name && m.name.trim() !== ''
-                                    })
-                                    .map(m => {
-                                      if (typeof m === 'string') {
-                                        return { name: m.trim(), timeType: '', estimatedMinutes: '', pomodoroCount: '' }
-                                      }
-                                      return {
-                                        name: m.name.trim(),
-                                        timeType: m.timeType || '',
-                                        estimatedMinutes: m.estimatedMinutes || '',
-                                        pomodoroCount: m.pomodoroCount || ''
-                                      }
-                                    })
-                                  
-                                  const updatedSubjects = studyPlan.subjects.map(s =>
-                                    (s.id || s.name) === (subject.id || subject.name)
-                                      ? { ...s, materials: cleanedMaterials }
-                                      : s
-                                  )
-                                  onUpdateSubjects(updatedSubjects)
-                                }
-                                setEditingSubjectId(null)
-                                setEditingMaterials([])
-                                // Note: User needs to click "Refresh Plan" button to regenerate calendar
-                              }}
-                              className="px-3 py-2 text-sm bg-indigo-600 text-white rounded hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors"
-                            >
-                              Save Changes
-                            </button>
-                            <button
-                              onClick={() => {
-                                setEditingSubjectId(null)
-                                setEditingMaterials([])
-                              }}
-                              className="px-3 py-2 text-sm bg-gray-500 text-white rounded hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500 transition-colors"
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="space-y-1">
-                          {subjectMaterials.length > 0 ? (
-                            <>
-                              <div className="flex flex-wrap gap-2">
-                                {subjectMaterials.map((material, idx) => {
-                                  const materialName = typeof material === 'string' ? material : (material.name || '')
-                                  const timeType = typeof material === 'object' && material.timeType ? material.timeType : 'minutes'
-                                  const materialMinutes = typeof material === 'object' && material.estimatedMinutes ? material.estimatedMinutes : null
-                                  const pomodoroCount = typeof material === 'object' && material.pomodoroCount ? material.pomodoroCount : null
-                                  
-                                  return (
-                                    <span
-                                      key={idx}
-                                      className="px-2 py-1 bg-white border border-gray-300 rounded text-sm text-gray-700"
-                                      title={
-                                        timeType === 'pomodoro' && pomodoroCount 
-                                          ? `${pomodoroCount} pomodoro(s) = ${materialMinutes} minutes` 
-                                          : materialMinutes 
-                                          ? `Estimated: ${materialMinutes} minutes` 
-                                          : 'Time will be auto-calculated'
-                                      }
-                                    >
-                                      {materialName}
-                                      {timeType === 'pomodoro' && pomodoroCount ? (
-                                        <span className="ml-1 text-xs text-gray-500">({pomodoroCount} pomodoro{pomodoroCount > 1 ? 's' : ''})</span>
-                                      ) : materialMinutes ? (
-                                        <span className="ml-1 text-xs text-gray-500">({materialMinutes}m)</span>
-                                      ) : null}
-                                    </span>
-                                  )
-                                })}
-                              </div>
-                              
-                              {/* Breakdown Dropdown */}
-                              <div className="mt-3">
-                                <div className="flex items-center gap-2 mb-1">
-                                  <button
-                                    onClick={() => {
-                                      const subjectKey = subject.id || subject.name
-                                      const newExpanded = new Set(expandedBreakdowns)
-                                      if (newExpanded.has(subjectKey)) {
-                                        newExpanded.delete(subjectKey)
-                                      } else {
-                                        newExpanded.add(subjectKey)
-                                      }
-                                      setExpandedBreakdowns(newExpanded)
-                                    }}
-                                    className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
-                                  >
-                                    <span>Breakdown</span>
-                                    <span className={`transform transition-transform ${expandedBreakdowns.has(subject.id || subject.name) ? 'rotate-180' : ''}`}>
-                                      ▼
-                                    </span>
-                                  </button>
-                                  <span className="text-xs text-gray-500 italic">
-                                    See how often each topic appears in your calendar
-                                  </span>
-                                </div>
-                                
-                                {expandedBreakdowns.has(subject.id || subject.name) && (
-                                  <div className="mt-2 p-3 bg-white border border-gray-200 rounded-lg">
-                                    <div className="text-xs font-semibold text-gray-600 mb-2">Topic Repetition in Calendar:</div>
-                                    <div className="space-y-2">
-                                      {subjectMaterials.map((material, idx) => {
-                                        const materialName = typeof material === 'string' ? material : (material.name || '')
-                                        const repetitionCount = getTopicRepetitionCount(subject.name || subject.id, materialName)
-                                        
-                                        return (
-                                          <div key={idx} className="flex items-center justify-between text-sm">
-                                            <span className="text-gray-700">{materialName}</span>
-                                            <span className={`px-2 py-1 rounded text-xs font-semibold ${
-                                              repetitionCount > 0 
-                                                ? 'bg-green-100 text-green-700 border border-green-300' 
-                                                : 'bg-gray-100 text-gray-500 border border-gray-300'
-                                            }`}>
-                                              {repetitionCount > 0 ? `${repetitionCount} time${repetitionCount > 1 ? 's' : ''}` : 'Not scheduled'}
-                                            </span>
-                                          </div>
-                                        )
-                                      })}
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            </>
-                          ) : (
-                            <p className="text-sm text-gray-400 italic">
-                              No study materials added yet. Click &quot;Edit Materials&quot; to add topics.
-                            </p>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </div>
+                  <PlanSubjectCard
+                    key={subjectKey}
+                    subject={subject}
+                    studyPlan={studyPlan}
+                    isEditing={isEditing}
+                    editingMaterials={editingMaterials}
+                    onEditMaterials={setEditingMaterials}
+                    onUpdateSubjects={onUpdateSubjects}
+                    onToggleEdit={(key) => {
+                      if (key === null) {
+                        setEditingSubjectId(null)
+                        setEditingMaterials([])
+                      } else {
+                        setEditingSubjectId(key)
+                        setEditingMaterials([...(subject.materials || [])])
+                      }
+                    }}
+                    isCollapsed={isCollapsed}
+                    onToggleCollapse={(key) => {
+                      const planKey = `plan-subject-${key}`
+                      setCollapsedItems(prev => {
+                        const next = new Set(prev)
+                        if (next.has(planKey)) next.delete(planKey)
+                        else next.add(planKey)
+                        return next
+                      })
+                    }}
+                    getTopicRepetitionCount={getTopicRepetitionCount}
+                    collapsedItems={collapsedItems}
+                    setCollapsedItems={setCollapsedItems}
+                  />
                 )
               })}
           </div>

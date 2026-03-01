@@ -55,8 +55,12 @@ export function generateStudyPlan(subjects, numberOfSubjects, dailyHours) {
   })
   
   // 5. Create topic assignment tracker (explicit state management)
-  // This tracks which topics have been assigned to which days for each subject
-  // Ensures all topics appear and are distributed evenly across days
+  // WHY Map-based tracking is needed:
+  // - Ensures even distribution: Without tracking, topics might cluster on early days
+  // - Guarantees coverage: Tracks which topics haven't appeared yet (assignedCount === 0)
+  // - Enables spacing effect: Tracks last assignment day for spaced repetition
+  // - Prevents over-allocation: Ensures topics appear proportionally across all days
+  // Structure: Map<subjectName, {assignedDays: Map<topicName, [dayNumbers]>}>
   const topicTracker = new Map()
   
   // 6. Create daily schedule
@@ -313,6 +317,13 @@ function distributeTopicsForDay(subject, day, totalDays, availableMinutes = null
     }
   })
   
+  // WHY multiple sorting passes are needed:
+  // 1. Unassigned topics first: CRITICAL - Without this, some topics might never appear
+  //    Example: If topic A always fits but topic B doesn't, B would never be assigned
+  // 2. Fewer assignments: Ensures even distribution - topics appear similar number of times
+  //    Example: Topic A appears 5 times, Topic B appears 0 times → prioritize B
+  // 3. Older assignments: Spacing effect (research-backed) - better retention when reviewed after gap
+  //    Example: Topic reviewed on day 1 and day 5 is better than day 1 and day 2
   // Smart sorting: ensures all topics appear and are distributed evenly
   // Level 1: Unassigned topics first (critical - ensures students see all topics)
   // Level 2: Fewer assignments first (even distribution across days)
@@ -361,6 +372,12 @@ function distributeTopicsForDay(subject, day, totalDays, availableMinutes = null
     }
   }
   
+  // WHY fallback logic exists:
+  // - Time estimates may be inaccurate or missing (user didn't specify)
+  // - Available minutes might be less than smallest topic estimate
+  // - Without fallback, student would see empty day → demotivating
+  // - Ensures progress: Always shows at least one topic to study
+  // - Better UX: Empty days are confusing; one topic is better than none
   // Fallback: if no topics fit but we have materials, assign smallest topic anyway
   // This ensures students always see at least one topic, even if time estimates are off
   if (selectedTopics.length === 0 && topicStats.length > 0) {
