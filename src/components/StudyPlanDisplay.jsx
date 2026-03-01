@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import PropTypes from 'prop-types'
 
 function StudyPlanDisplay({ studyPlan, onBack, onUpdateSubjects, onRefreshPlan }) {
@@ -11,8 +11,39 @@ function StudyPlanDisplay({ studyPlan, onBack, onUpdateSubjects, onRefreshPlan }
   const [editingMaterials, setEditingMaterials] = useState([])
   const [showBreakModal, setShowBreakModal] = useState(false)
   const [showLongBreakModal, setShowLongBreakModal] = useState(false)
-  const [showConfetti, setShowConfetti] = useState(false)
+  const [showDayCompleteModal, setShowDayCompleteModal] = useState(false)
+  const [completedDayNumber, setCompletedDayNumber] = useState(null)
+  const [dayCompleteMessage, setDayCompleteMessage] = useState('')
   const [expandedBreakdowns, setExpandedBreakdowns] = useState(new Set()) // Track which subject breakdowns are expanded
+  
+  // Timer state for 5-minute break
+  const [breakTimerStarted, setBreakTimerStarted] = useState(false)
+  const [breakTimeRemaining, setBreakTimeRemaining] = useState(10) // 10 seconds for testing (normally 5 * 60)
+  const breakTimerIntervalRef = useRef(null)
+  
+  // Timer state for 30-minute break
+  const [longBreakTimerStarted, setLongBreakTimerStarted] = useState(false)
+  const [longBreakTimeRemaining, setLongBreakTimeRemaining] = useState(10) // 10 seconds for testing (normally 30 * 60)
+  const longBreakTimerIntervalRef = useRef(null)
+  
+  // Motivational messages for day completion
+  const dayCompleteMessages = [
+    'Look at you. Being consistent.',
+    'Not bad.',
+    'Still going. Respect.',
+    'Good work. Do it again tomorrow.',
+    'One step ahead of yesterday.',
+    '1% smarter than yesterday.',
+    'Consistency > motivation.',
+    'Small wins add up.',
+    'No excuses today. Good.',
+    'Do it again tomorrow.',
+    'One day closer. Or one excuse shorter.',
+    'Average quits. You didn\'t.',
+    'Build the habit. The results will follow.',
+    'You can do it bro. Believe in yourself.',
+    'Brawo ty.'
+  ]
   
   // Pagination settings
   const daysPerPage = 7 // Show 7 days per page (one week)
@@ -23,14 +54,251 @@ function StudyPlanDisplay({ studyPlan, onBack, onUpdateSubjects, onRefreshPlan }
   const endIndex = startIndex + daysPerPage
   const currentPageDays = studyPlan.dailySchedule.slice(startIndex, endIndex)
 
-  const toggleDayComplete = (day) => {
-    const newCompleted = new Set(completedDays)
-    if (newCompleted.has(day)) {
-      newCompleted.delete(day)
+  // Timer effect for 5-minute break
+  useEffect(() => {
+    if (breakTimerStarted && breakTimeRemaining > 0) {
+      breakTimerIntervalRef.current = setInterval(() => {
+        setBreakTimeRemaining((prev) => {
+          if (prev <= 1) {
+            // Timer finished - play alarm sound
+            if (breakTimerIntervalRef.current) {
+              clearInterval(breakTimerIntervalRef.current)
+            }
+            playAlarmSound()
+            return 0
+          }
+          return prev - 1
+        })
+      }, 1000)
     } else {
-      newCompleted.add(day)
+      if (breakTimerIntervalRef.current) {
+        clearInterval(breakTimerIntervalRef.current)
+        breakTimerIntervalRef.current = null
+      }
     }
-    setCompletedDays(newCompleted)
+
+    return () => {
+      if (breakTimerIntervalRef.current) {
+        clearInterval(breakTimerIntervalRef.current)
+      }
+    }
+  }, [breakTimerStarted, breakTimeRemaining])
+
+  // Reset timer when modal closes
+  useEffect(() => {
+    if (!showBreakModal) {
+      setBreakTimerStarted(false)
+      setBreakTimeRemaining(10) // Reset to 10 seconds for testing (normally 5 * 60)
+      if (breakTimerIntervalRef.current) {
+        clearInterval(breakTimerIntervalRef.current)
+        breakTimerIntervalRef.current = null
+      }
+    }
+  }, [showBreakModal])
+
+  // Timer effect for 30-minute break
+  useEffect(() => {
+    if (longBreakTimerStarted && longBreakTimeRemaining > 0) {
+      longBreakTimerIntervalRef.current = setInterval(() => {
+        setLongBreakTimeRemaining((prev) => {
+          if (prev <= 1) {
+            // Timer finished - play alarm sound
+            if (longBreakTimerIntervalRef.current) {
+              clearInterval(longBreakTimerIntervalRef.current)
+            }
+            playAlarmSound()
+            return 0
+          }
+          return prev - 1
+        })
+      }, 1000)
+    } else {
+      if (longBreakTimerIntervalRef.current) {
+        clearInterval(longBreakTimerIntervalRef.current)
+        longBreakTimerIntervalRef.current = null
+      }
+    }
+
+    return () => {
+      if (longBreakTimerIntervalRef.current) {
+        clearInterval(longBreakTimerIntervalRef.current)
+      }
+    }
+  }, [longBreakTimerStarted, longBreakTimeRemaining])
+
+  // Reset 30-minute timer when modal closes
+  useEffect(() => {
+    if (!showLongBreakModal) {
+      setLongBreakTimerStarted(false)
+      setLongBreakTimeRemaining(10) // Reset to 10 seconds for testing (normally 30 * 60)
+      if (longBreakTimerIntervalRef.current) {
+        clearInterval(longBreakTimerIntervalRef.current)
+        longBreakTimerIntervalRef.current = null
+      }
+    }
+  }, [showLongBreakModal])
+
+  // Format time as MM:SS
+  const formatTime = (seconds) => {
+    const mins = Math.floor(seconds / 60)
+    const secs = seconds % 60
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
+  }
+
+  // Play dramatic alarm sound when timer finishes
+  const playAlarmSound = () => {
+    try {
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)()
+      
+      // Create dramatic escalating alarm pattern
+      const playEscalatingBeep = (delay, startFreq, endFreq, duration) => {
+        setTimeout(() => {
+          const oscillator = audioContext.createOscillator()
+          const gainNode = audioContext.createGain()
+          
+          oscillator.connect(gainNode)
+          gainNode.connect(audioContext.destination)
+          
+          // Escalate frequency from start to end
+          oscillator.frequency.setValueAtTime(startFreq, audioContext.currentTime)
+          oscillator.frequency.exponentialRampToValueAtTime(endFreq, audioContext.currentTime + duration)
+          
+          oscillator.type = 'sine'
+          
+          // More dramatic volume curve
+          gainNode.gain.setValueAtTime(0.1, audioContext.currentTime)
+          gainNode.gain.linearRampToValueAtTime(0.5, audioContext.currentTime + duration * 0.3)
+          gainNode.gain.linearRampToValueAtTime(0.3, audioContext.currentTime + duration * 0.7)
+          gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + duration)
+          
+          oscillator.start(audioContext.currentTime)
+          oscillator.stop(audioContext.currentTime + duration)
+        }, delay)
+      }
+      
+      // Create siren-like effect
+      const playSiren = (delay, duration) => {
+        setTimeout(() => {
+          const oscillator = audioContext.createOscillator()
+          const gainNode = audioContext.createGain()
+          
+          oscillator.connect(gainNode)
+          gainNode.connect(audioContext.destination)
+          
+          oscillator.type = 'sawtooth' // More dramatic sound
+          
+          // Siren effect - oscillating frequency
+          const cycles = 3
+          const cycleDuration = duration / cycles
+          for (let i = 0; i < cycles; i++) {
+            const cycleStart = audioContext.currentTime + (cycleDuration * i)
+            oscillator.frequency.setValueAtTime(600, cycleStart)
+            oscillator.frequency.linearRampToValueAtTime(1200, cycleStart + cycleDuration / 2)
+            oscillator.frequency.linearRampToValueAtTime(600, cycleStart + cycleDuration)
+          }
+          
+          gainNode.gain.setValueAtTime(0.4, audioContext.currentTime)
+          gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + duration)
+          
+          oscillator.start(audioContext.currentTime)
+          oscillator.stop(audioContext.currentTime + duration)
+        }, delay)
+      }
+      
+      // Dramatic alarm sequence
+      playEscalatingBeep(0, 400, 1200, 0.6)      // Low to high escalating beep
+      playEscalatingBeep(700, 1200, 400, 0.6)   // High to low descending beep
+      playSiren(1400, 1.2)                       // Siren effect
+      playEscalatingBeep(2700, 600, 1500, 0.8)  // Final dramatic escalation
+      playEscalatingBeep(3600, 1500, 600, 0.8)  // Final dramatic descent
+    } catch (error) {
+      console.error('Error playing alarm sound:', error)
+    }
+  }
+
+  const toggleDayComplete = (dayNumber) => {
+    const newCompleted = new Set(completedDays)
+    const isCurrentlyCompleted = newCompleted.has(dayNumber)
+    
+    // Find the day schedule to get all subjects and topics
+    const daySchedule = studyPlan.dailySchedule.find(d => d.day === dayNumber)
+    
+    if (isCurrentlyCompleted) {
+      // Unmarking the day - unmark all topics and pomodoros for this day
+      newCompleted.delete(dayNumber)
+      setCompletedDays(newCompleted)
+      
+      // Hide day completion modal if it's showing
+      setShowDayCompleteModal(false)
+      setCompletedDayNumber(null)
+      setDayCompleteMessage('')
+      
+      if (daySchedule) {
+        // Unmark all topics for this day
+        const newCompletedTopics = new Set(completedTopics)
+        const newCompletedPomodoros = new Set(completedPomodoros)
+        
+        daySchedule.subjects.forEach((subject) => {
+          if (subject.topics && subject.topics.length > 0) {
+            subject.topics.forEach((topic, topicIdx) => {
+              // Unmark topic
+              const topicKey = `${dayNumber}-${subject.name}-${topicIdx}`
+              newCompletedTopics.delete(topicKey)
+              
+              // Unmark all pomodoros for this topic if it has pomodoros
+              const pomodoroCount = typeof topic === 'object' && topic.pomodoroCount ? topic.pomodoroCount : 0
+              if (pomodoroCount > 0) {
+                for (let i = 1; i <= pomodoroCount; i++) {
+                  const pomodoroKey = `${dayNumber}-${subject.name}-${topicIdx}-${i}`
+                  newCompletedPomodoros.delete(pomodoroKey)
+                }
+              }
+            })
+          }
+        })
+        
+        setCompletedTopics(newCompletedTopics)
+        setCompletedPomodoros(newCompletedPomodoros)
+      }
+    } else {
+      // Marking the day as complete - mark all topics and pomodoros for this day
+      newCompleted.add(dayNumber)
+      setCompletedDays(newCompleted)
+      
+      if (daySchedule) {
+        // Mark all topics and pomodoros for this day
+        const newCompletedTopics = new Set(completedTopics)
+        const newCompletedPomodoros = new Set(completedPomodoros)
+        
+        daySchedule.subjects.forEach((subject) => {
+          if (subject.topics && subject.topics.length > 0) {
+            subject.topics.forEach((topic, topicIdx) => {
+              // Mark topic as completed
+              const topicKey = `${dayNumber}-${subject.name}-${topicIdx}`
+              newCompletedTopics.add(topicKey)
+              
+              // Mark all pomodoros for this topic if it has pomodoros
+              const pomodoroCount = typeof topic === 'object' && topic.pomodoroCount ? topic.pomodoroCount : 0
+              if (pomodoroCount > 0) {
+                for (let i = 1; i <= pomodoroCount; i++) {
+                  const pomodoroKey = `${dayNumber}-${subject.name}-${topicIdx}-${i}`
+                  newCompletedPomodoros.add(pomodoroKey)
+                }
+              }
+            })
+          }
+        })
+        
+        setCompletedTopics(newCompletedTopics)
+        setCompletedPomodoros(newCompletedPomodoros)
+        
+        // Show day completion modal with random motivational message
+        const randomMessage = dayCompleteMessages[Math.floor(Math.random() * dayCompleteMessages.length)]
+        setCompletedDayNumber(dayNumber)
+        setDayCompleteMessage(randomMessage)
+        setShowDayCompleteModal(true)
+      }
+    }
   }
 
   // Toggle topic completion
@@ -64,22 +332,72 @@ function StudyPlanDisplay({ studyPlan, onBack, onUpdateSubjects, onRefreshPlan }
       // Hide modals if unchecking
       setShowBreakModal(false)
       setShowLongBreakModal(false)
-      setShowConfetti(false)
+      
+      // Check if topic should be unmarked (if it was auto-completed)
+      // Find the day schedule to get topic info
+      const daySchedule = studyPlan.dailySchedule.find(d => d.day === day)
+      if (daySchedule) {
+        const subject = daySchedule.subjects.find(s => s.name === subjectName)
+        if (subject && subject.topics && subject.topics[topicIndex]) {
+          const topic = subject.topics[topicIndex]
+          const pomodoroCount = typeof topic === 'object' && topic.pomodoroCount ? topic.pomodoroCount : 0
+          
+          // Count completed pomodoros for this specific topic
+          let completedCount = 0
+          for (let i = 1; i <= pomodoroCount; i++) {
+            const key = `${day}-${subjectName}-${topicIndex}-${i}`
+            if (newCompleted.has(key)) {
+              completedCount++
+            }
+          }
+          
+          // If not all pomodoros are completed, unmark the topic
+          if (completedCount < pomodoroCount) {
+            const topicKey = `${day}-${subjectName}-${topicIndex}`
+            const newTopicCompleted = new Set(completedTopics)
+            newTopicCompleted.delete(topicKey)
+            setCompletedTopics(newTopicCompleted)
+          }
+        }
+      }
     } else {
       // Checking - add to set
       newCompleted.add(pomodoroKey)
       setCompletedPomodoros(newCompleted)
       
-      // Count total completed pomodoros
+      // Find the day schedule to get topic info
+      const daySchedule = studyPlan.dailySchedule.find(d => d.day === day)
+      if (daySchedule) {
+        const subject = daySchedule.subjects.find(s => s.name === subjectName)
+        if (subject && subject.topics && subject.topics[topicIndex]) {
+          const topic = subject.topics[topicIndex]
+          const pomodoroCount = typeof topic === 'object' && topic.pomodoroCount ? topic.pomodoroCount : 0
+          
+          // Count completed pomodoros for this specific topic
+          let completedCount = 0
+          for (let i = 1; i <= pomodoroCount; i++) {
+            const key = `${day}-${subjectName}-${topicIndex}-${i}`
+            if (newCompleted.has(key)) {
+              completedCount++
+            }
+          }
+          
+          // If all pomodoros are completed, automatically mark the topic as completed
+          if (completedCount === pomodoroCount && pomodoroCount > 0) {
+            const topicKey = `${day}-${subjectName}-${topicIndex}`
+            const newTopicCompleted = new Set(completedTopics)
+            newTopicCompleted.add(topicKey)
+            setCompletedTopics(newTopicCompleted)
+          }
+        }
+      }
+      
+      // Count total completed pomodoros (across all topics) for break modals
       const totalCompleted = newCompleted.size
       
       // Check if this is the 5th pomodoro (or a multiple of 5)
       if (totalCompleted > 0 && totalCompleted % 5 === 0) {
-        // 30 minute break with confetti!
-        setShowConfetti(true)
         setShowLongBreakModal(true)
-        // Auto-hide confetti after 5 seconds
-        setTimeout(() => setShowConfetti(false), 5000)
       } else {
         // Regular 5 minute break
         setShowBreakModal(true)
@@ -144,72 +462,163 @@ function StudyPlanDisplay({ studyPlan, onBack, onUpdateSubjects, onRefreshPlan }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-8 relative">
-      {/* Confetti Effect */}
-      {showConfetti && (
-        <div className="fixed inset-0 pointer-events-none z-50 overflow-hidden">
-          {Array.from({ length: 50 }).map((_, i) => (
-            <div
-              key={i}
-              className="absolute animate-bounce"
-              style={{
-                left: `${Math.random() * 100}%`,
-                top: `${Math.random() * 100}%`,
-                animationDelay: `${Math.random() * 2}s`,
-                animationDuration: `${2 + Math.random() * 2}s`,
-              }}
-            >
-              <span
-                className="text-2xl"
-                style={{
-                  color: ['#FF6B6B', '#4ECDC4', '#FFE66D', '#95E1D3', '#F38181'][Math.floor(Math.random() * 5)],
-                }}
-              >
-                🎉
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-
       {/* 5 Minute Break Modal */}
       {showBreakModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={() => setShowBreakModal(false)}>
           <div className="bg-white rounded-lg p-8 max-w-md mx-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
             <div className="text-center">
-              <div className="text-6xl mb-4">⏱️</div>
               <h2 className="text-2xl font-bold text-gray-800 mb-2">Great Work!</h2>
-              <p className="text-lg text-gray-600 mb-6">Take a 5 minute break</p>
-              <button
-                onClick={() => setShowBreakModal(false)}
-                className="px-6 py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
-              >
-                Continue Studying
-              </button>
+              <p className="text-lg text-gray-600 mb-4">Take a break</p>
+              
+              {/* Timer Display */}
+              <div className="mb-6">
+                {breakTimerStarted ? (
+                  <div>
+                    <div className={`text-5xl font-bold mb-2 ${
+                      breakTimeRemaining === 0 
+                        ? 'text-green-600' 
+                        : breakTimeRemaining <= 60 
+                        ? 'text-orange-600' 
+                        : 'text-blue-600'
+                    }`}>
+                      {formatTime(breakTimeRemaining)}
+                    </div>
+                    {breakTimeRemaining === 0 && (
+                      <div className="mb-4">
+                        <p className="text-xl font-bold text-green-600 mb-2">Break Complete!</p>
+                        <p className="text-lg font-semibold text-orange-600">Get yo ass back to studying</p>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-3xl font-semibold text-gray-400 mb-4">
+                    {formatTime(breakTimeRemaining)}
+                  </div>
+                )}
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-3 justify-center">
+                {!breakTimerStarted ? (
+                  <button
+                    onClick={() => setBreakTimerStarted(true)}
+                    className="px-6 py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+                  >
+                    Start Break
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => setShowBreakModal(false)}
+                    className="px-6 py-3 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 transition-colors"
+                  >
+                    Continue Studying
+                  </button>
+                )}
+                {breakTimerStarted && breakTimeRemaining > 0 && (
+                  <button
+                    onClick={() => {
+                      setBreakTimerStarted(false)
+                      setBreakTimeRemaining(10) // Reset to 10 seconds for testing (normally 5 * 60)
+                    }}
+                    className="px-6 py-3 bg-gray-500 text-white rounded-lg font-semibold hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500 transition-colors"
+                  >
+                    Reset
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* 30 Minute Break Modal with Confetti */}
+      {/* 30 Minute Break Modal */}
       {showLongBreakModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={() => {
-          setShowLongBreakModal(false)
-          setShowConfetti(false)
-        }}>
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={() => setShowLongBreakModal(false)}>
           <div className="bg-gradient-to-br from-yellow-100 to-orange-100 rounded-lg p-8 max-w-md mx-4 shadow-xl border-4 border-yellow-400" onClick={(e) => e.stopPropagation()}>
             <div className="text-center">
-              <div className="text-6xl mb-4">🎉🎊🎈</div>
               <h2 className="text-3xl font-bold text-gray-800 mb-2">Congratulations!</h2>
-              <p className="text-xl text-gray-700 mb-2 font-semibold">You've completed 5 pomodoros!</p>
-              <p className="text-lg text-gray-600 mb-6">Take a well-deserved 30 minute break</p>
+              <p className="text-xl text-gray-700 mb-2 font-semibold">You&#39;ve completed 5 pomodoros!</p>
+              <p className="text-lg text-gray-600 mb-4">Take a well-deserved break</p>
+              
+              {/* Timer Display */}
+              <div className="mb-6">
+                {longBreakTimerStarted ? (
+                  <div>
+                    <div className={`text-5xl font-bold mb-2 ${
+                      longBreakTimeRemaining === 0 
+                        ? 'text-green-600' 
+                        : longBreakTimeRemaining <= 60 
+                        ? 'text-orange-600' 
+                        : 'text-blue-600'
+                    }`}>
+                      {formatTime(longBreakTimeRemaining)}
+                    </div>
+                    {longBreakTimeRemaining === 0 && (
+                      <div className="mb-4">
+                        <p className="text-xl font-bold text-green-600 mb-2">Break Complete!</p>
+                        <p className="text-lg font-semibold text-orange-600">Get yo ass back to studying</p>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-3xl font-semibold text-gray-400 mb-4">
+                    {formatTime(longBreakTimeRemaining)}
+                  </div>
+                )}
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-3 justify-center">
+                {!longBreakTimerStarted ? (
+                  <button
+                    onClick={() => setLongBreakTimerStarted(true)}
+                    className="px-6 py-3 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 transition-colors"
+                  >
+                    Start Break
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => setShowLongBreakModal(false)}
+                    className="px-6 py-3 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 transition-colors"
+                  >
+                    Continue Studying
+                  </button>
+                )}
+                {longBreakTimerStarted && longBreakTimeRemaining > 0 && (
+                  <button
+                    onClick={() => {
+                      setLongBreakTimerStarted(false)
+                      setLongBreakTimeRemaining(10) // Reset to 10 seconds for testing (normally 30 * 60)
+                    }}
+                    className="px-6 py-3 bg-gray-500 text-white rounded-lg font-semibold hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500 transition-colors"
+                  >
+                    Reset
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Day Completion Modal */}
+      {showDayCompleteModal && completedDayNumber !== null && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={() => {
+          setShowDayCompleteModal(false)
+          setDayCompleteMessage('')
+        }}>
+          <div className="bg-gradient-to-br from-green-100 to-emerald-100 rounded-lg p-8 max-w-md mx-4 shadow-xl border-4 border-green-400" onClick={(e) => e.stopPropagation()}>
+            <div className="text-center">
+              <h2 className="text-3xl font-bold text-gray-800 mb-2">Day {completedDayNumber} Complete!</h2>
+              <p className="text-xl text-gray-700 mb-2 font-semibold">{dayCompleteMessage || 'Well done keep going, there\'s not long left now'}</p>
               <button
                 onClick={() => {
-                  setShowLongBreakModal(false)
-                  setShowConfetti(false)
+                  setShowDayCompleteModal(false)
+                  setDayCompleteMessage('')
                 }}
-                className="px-6 py-3 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 transition-colors"
+                className="px-6 py-3 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 transition-colors mt-4"
               >
-                Continue Studying
+                Continue
               </button>
             </div>
           </div>
@@ -220,7 +629,7 @@ function StudyPlanDisplay({ studyPlan, onBack, onUpdateSubjects, onRefreshPlan }
         {/* Header */}
         <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
           <div className="flex items-center justify-between mb-4">
-            <h1 className="text-3xl font-bold text-gray-800">📚 Your Study Plan</h1>
+            <h1 className="text-3xl font-bold text-gray-800">Your Study Plan</h1>
             <button
               onClick={onBack}
               className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors"
@@ -277,14 +686,14 @@ function StudyPlanDisplay({ studyPlan, onBack, onUpdateSubjects, onRefreshPlan }
                 className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-colors text-sm font-medium flex items-center gap-2"
                 title="Refresh plan to update topic distribution in calendar"
               >
-                🔄 Refresh Plan
+                Refresh Plan
               </button>
             )}
           </div>
           {onRefreshPlan && (
             <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
               <p className="text-sm text-blue-800">
-                💡 <strong>Tip:</strong> After editing topics/materials, click "Refresh Plan" to update the calendar with the new topic distribution.
+                <strong>Tip:</strong> After editing topics/materials, click &quot;Refresh Plan&quot; to update the calendar with the new topic distribution.
               </p>
             </div>
           )}
@@ -332,7 +741,7 @@ function StudyPlanDisplay({ studyPlan, onBack, onUpdateSubjects, onRefreshPlan }
                           }}
                           className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 transition-colors"
                         >
-                          {isEditing ? 'Done' : '✏️ Edit Materials'}
+                          {isEditing ? 'Done' : 'Edit Materials'}
                         </button>
                       </div>
                     </div>
@@ -632,7 +1041,7 @@ function StudyPlanDisplay({ studyPlan, onBack, onUpdateSubjects, onRefreshPlan }
                             </>
                           ) : (
                             <p className="text-sm text-gray-400 italic">
-                              No study materials added yet. Click "Edit Materials" to add topics.
+                              No study materials added yet. Click &quot;Edit Materials&quot; to add topics.
                             </p>
                           )}
                         </div>
@@ -658,7 +1067,7 @@ function StudyPlanDisplay({ studyPlan, onBack, onUpdateSubjects, onRefreshPlan }
                   className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-colors text-sm font-medium"
                   title="Refresh plan after editing topics"
                 >
-                  🔄 Refresh Plan
+                  Refresh Plan
                 </button>
               )}
             </div>
@@ -670,7 +1079,7 @@ function StudyPlanDisplay({ studyPlan, onBack, onUpdateSubjects, onRefreshPlan }
               <thead>
                 <tr className="bg-gray-100 border-b-2 border-gray-400">
                   <th className="border-r border-gray-300 p-3 text-center text-sm font-semibold text-gray-700 w-16">
-                    ✓
+                    Done
                   </th>
                   <th className="border-r border-gray-300 p-3 text-left text-sm font-semibold text-gray-700 w-20">
                     Day

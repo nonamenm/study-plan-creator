@@ -1,15 +1,16 @@
 import { useState, useMemo } from 'react'
 import { generateStudyPlan } from '../utils/studyPlanGenerator'
 import StudyPlanDisplay from './StudyPlanDisplay'
+import defaultSubjects from '../data/defaultSubjects'
 
 function StudyPlanForm() {
-  // Form state
-  const [currentStep, setCurrentStep] = useState(1) // 1 = Basic Info, 2 = Materials
-  const [numberOfSubjects, setNumberOfSubjects] = useState('')
-  const [subjects, setSubjects] = useState([])
+  // Form state — pre-populated from defaultSubjects.js so you don't have to re-enter everything
+  const [currentStep, setCurrentStep] = useState(2)
+  const [numberOfSubjects, setNumberOfSubjects] = useState(String(defaultSubjects.length))
+  const [subjects, setSubjects] = useState(defaultSubjects)
   const [newSubjectName, setNewSubjectName] = useState('')
-  const [newSubjectPriority, setNewSubjectPriority] = useState(1)
-  const [newSubjectExamDates, setNewSubjectExamDates] = useState(['']) // Array to support multiple exam dates
+  const [newSubjectPriority, setNewSubjectPriority] = useState(defaultSubjects.length + 1)
+  const [newSubjectExamDates, setNewSubjectExamDates] = useState([''])
   const [dailyHours, setDailyHours] = useState('')
   const [learningStyle, setLearningStyle] = useState('')
   const [errors, setErrors] = useState({})
@@ -413,7 +414,7 @@ function StudyPlanForm() {
                   Exam Dates <span className="text-red-500">*</span>
                 </label>
                 <p className="text-xs text-gray-500 italic">
-                  💡 Some exams consist of Paper 1 and Paper 2 exams. Add multiple dates if your subject has multiple papers.
+                  <strong>Tip:</strong> Some exams consist of Paper 1 and Paper 2 exams. Add multiple dates if your subject has multiple papers.
                 </p>
                 {newSubjectExamDates.map((date, index) => (
                   <div key={index} className="flex gap-2 items-center">
@@ -925,7 +926,7 @@ function StudyPlanForm() {
                         <p className="text-xs text-gray-400 italic">No materials added yet. Add topics you need to study.</p>
                       )}
                       <p className="text-xs text-gray-500 mt-2">
-                        💡 Specify estimated time per topic (minutes or pomodoros). 1 pomodoro = 25 minutes. If left blank, time will be auto-calculated.
+                        <strong>Tip:</strong> Specify estimated time per topic (minutes or pomodoros). 1 pomodoro = 25 minutes. If left blank, time will be auto-calculated.
                       </p>
                     </div>
                   </div>

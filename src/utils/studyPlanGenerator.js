@@ -54,8 +54,13 @@ export function generateStudyPlan(subjects, numberOfSubjects, dailyHours) {
     subject.minutesPerDay = (subject.hours / daysUntilExam) * 60
   })
   
-  // 5. Create daily schedule
-  const dailySchedule = createDailySchedule(subjectsWithWeights, daysUntilExam, dailyHours)
+  // 5. Create topic assignment tracker (explicit state management)
+  // This tracks which topics have been assigned to which days for each subject
+  // Ensures all topics appear and are distributed evenly across days
+  const topicTracker = new Map()
+  
+  // 6. Create daily schedule
+  const dailySchedule = createDailySchedule(subjectsWithWeights, daysUntilExam, dailyHours, topicTracker)
   
   return {
     daysUntilExam,
@@ -78,14 +83,18 @@ export function generateStudyPlan(subjects, numberOfSubjects, dailyHours) {
  * @param {Array} subjects - Subjects with calculated hours and weights
  * @param {number} daysUntilExam - Total days available
  * @param {number} dailyHours - Hours per day
+ * @param {Map} topicTracker - Map tracking topic assignments per subject (explicit state)
  * @returns {Array} Array of daily schedule objects
  */
-function createDailySchedule(subjects, daysUntilExam, dailyHours) {
+function createDailySchedule(subjects, daysUntilExam, dailyHours, topicTracker) {
   const dailyMinutes = dailyHours * 60
   const schedule = []
   
-  // Clear topic assignment tracker for new schedule
-  topicAssignmentTracker.clear()
+  // Clear topic assignment tracker for new schedule (explicit reset)
+  topicTracker.clear()
+  
+  // Minimum study block size (25 minutes = one Pomodoro, research-backed)
+  const MIN_STUDY_BLOCK_MINUTES = 25
   
   // Sort subjects by priority (highest priority first)
   const sortedSubjects = [...subjects].sort((a, b) => a.priority - b.priority)
@@ -127,26 +136,12 @@ function createDailySchedule(subjects, daysUntilExam, dailyHours) {
         Math.max(0, remainingForSubject) // Don't allocate more than needed
       )
       
-      // Minimum 25 minutes if subject is included (to make it meaningful)
-      if (minutesToAllocate >= 25 || (minutesToAllocate > 0 && remainingForSubject > 0)) {
-        const finalMinutes = Math.max(25, minutesToAllocate)
+      // Minimum study block if subject is included (ensures meaningful study sessions)
+      if (minutesToAllocate >= MIN_STUDY_BLOCK_MINUTES || (minutesToAllocate > 0 && remainingForSubject > 0)) {
+        const finalMinutes = Math.max(MIN_STUDY_BLOCK_MINUTES, minutesToAllocate)
         
         // Distribute topics for this subject on this day based on available time
-        let topics = []
-        try {
-          topics = distributeTopicsForDay(subject, day, daysUntilExam, finalMinutes) || []
-        } catch (error) {
-          console.error(`Error distributing topics for ${subject.name} on day ${day}:`, error)
-          // Fallback: if distribution fails, try to get at least one topic
-          const materials = subject.materials || []
-          if (materials.length > 0) {
-            const firstMaterial = materials[0]
-            topics = [{
-              name: typeof firstMaterial === 'string' ? firstMaterial : (firstMaterial.name || ''),
-              estimatedMinutes: null
-            }]
-          }
-        }
+        const topics = getTopicsForSubject(subject, day, daysUntilExam, finalMinutes, topicTracker)
         
         daySchedule.subjects.push({
           name: subject.name,
@@ -176,7 +171,7 @@ function createDailySchedule(subjects, daysUntilExam, dailyHours) {
         const needed = subject.minutesPerDay * daysUntilExam - allocatedMinutes[subject.name]
         const minutesToAdd = Math.min(remainingMinutes, Math.ceil(needed))
         
-        if (minutesToAdd >= 25) {
+        if (minutesToAdd >= MIN_STUDY_BLOCK_MINUTES) {
           // Add to existing entry or create new
           const existingIndex = daySchedule.subjects.findIndex(s => s.name === subject.name)
           if (existingIndex >= 0) {
@@ -184,20 +179,7 @@ function createDailySchedule(subjects, daysUntilExam, dailyHours) {
             daySchedule.subjects[existingIndex].hours = (daySchedule.subjects[existingIndex].minutes / 60).toFixed(1)
           } else {
             // Distribute topics for this subject on this day based on available time
-            let topics = []
-            try {
-              topics = distributeTopicsForDay(subject, day, daysUntilExam, minutesToAdd) || []
-            } catch (error) {
-              console.error(`Error distributing topics for ${subject.name} on day ${day}:`, error)
-              const materials = subject.materials || []
-              if (materials.length > 0) {
-                const firstMaterial = materials[0]
-                topics = [{
-                  name: typeof firstMaterial === 'string' ? firstMaterial : (firstMaterial.name || ''),
-                  estimatedMinutes: null
-                }]
-              }
-            }
+            const topics = getTopicsForSubject(subject, day, daysUntilExam, minutesToAdd, topicTracker)
             daySchedule.subjects.push({
               name: subject.name,
               priority: subject.priority,
@@ -222,18 +204,50 @@ function createDailySchedule(subjects, daysUntilExam, dailyHours) {
   return schedule
 }
 
-// Track which topics have been assigned to which days for each subject
-const topicAssignmentTracker = new Map()
+/**
+ * Helper function to safely get topics for a subject with error handling
+ * Ensures students always see topics even if distribution fails
+ * 
+ * @param {Object} subject - Subject with materials array
+ * @param {number} day - Current day number (1-based)
+ * @param {number} totalDays - Total days until exam
+ * @param {number} availableMinutes - Minutes available for this subject on this day
+ * @param {Map} topicTracker - Map tracking topic assignments per subject
+ * @returns {Array<Object>} Array of topic objects to study on this day
+ */
+function getTopicsForSubject(subject, day, totalDays, availableMinutes, topicTracker) {
+  try {
+    const topics = distributeTopicsForDay(subject, day, totalDays, availableMinutes, topicTracker)
+    return topics || []
+  } catch (error) {
+    console.error(`Error distributing topics for ${subject.name} on day ${day}:`, error)
+    // Fallback: ensure at least one topic appears so students always have something to study
+    const materials = subject.materials || []
+    if (materials.length > 0) {
+      const firstMaterial = materials[0]
+      return [{
+        name: typeof firstMaterial === 'string' ? firstMaterial : (firstMaterial.name || ''),
+        estimatedMinutes: null,
+        pomodoroCount: typeof firstMaterial === 'object' ? (firstMaterial.pomodoroCount || null) : null,
+        timeType: typeof firstMaterial === 'object' ? (firstMaterial.timeType || null) : null
+      }]
+    }
+    return []
+  }
+}
 
 /**
  * Distributes topics for a subject across a specific day based on available time
+ * Uses smart distribution: prioritizes unassigned topics, ensures even distribution
+ * 
  * @param {Object} subject - Subject with materials array and minutes allocated for this day
  * @param {number} day - Current day number (1-based)
  * @param {number} totalDays - Total days until exam
  * @param {number} availableMinutes - Minutes available for this subject on this day
+ * @param {Map} topicTracker - Map tracking topic assignments per subject (explicit state)
  * @returns {Array<Object>} Array of topic objects {name, estimatedMinutes} to study on this day
  */
-function distributeTopicsForDay(subject, day, totalDays, availableMinutes = null) {
+function distributeTopicsForDay(subject, day, totalDays, availableMinutes = null, topicTracker) {
   // Get materials - handle both old format (strings) and new format (objects)
   const materials = subject.materials || []
   
@@ -266,15 +280,14 @@ function distributeTopicsForDay(subject, day, totalDays, availableMinutes = null
     return []
   }
   
-  // Initialize tracker for this subject
-  if (!topicAssignmentTracker.has(subject.name)) {
-    topicAssignmentTracker.set(subject.name, {
-      assignedDays: new Map(), // topic name -> [day numbers]
-      dayCounter: 0
+  // Initialize tracker for this subject (tracks which days each topic was assigned to)
+  if (!topicTracker.has(subject.name)) {
+    topicTracker.set(subject.name, {
+      assignedDays: new Map() // topic name -> [day numbers] - tracks assignment history
     })
   }
   
-  const tracker = topicAssignmentTracker.get(subject.name)
+  const tracker = topicTracker.get(subject.name)
   
   // Calculate estimated time per topic if not specified
   // Use total subject hours divided by number of topics
@@ -300,24 +313,41 @@ function distributeTopicsForDay(subject, day, totalDays, availableMinutes = null
     }
   })
   
-  // Sort: unassigned first, then by assignment count, then by last assignment day
+  // Smart sorting: ensures all topics appear and are distributed evenly
+  // Level 1: Unassigned topics first (critical - ensures students see all topics)
+  // Level 2: Fewer assignments first (even distribution across days)
+  // Level 3: Older assignments first (spacing effect - review topics after time gap)
   topicStats.sort((a, b) => {
+    // Unassigned topics get highest priority
     if (a.assignedCount === 0 && b.assignedCount > 0) return -1
     if (b.assignedCount === 0 && a.assignedCount > 0) return 1
+    // Then prioritize topics with fewer assignments (even distribution)
     if (a.assignedCount !== b.assignedCount) return a.assignedCount - b.assignedCount
+    // Finally, prioritize older assignments (spacing effect for better retention)
     return a.lastDay - b.lastDay
   })
   
-  // Select topics that fit within available time
+  // Filter and sort topics that fit within available time
+  // Combine passes 1 & 2: prioritize unassigned, then fit as many as possible
+  const topicsThatFit = topicStats.filter(t => t.estimatedMinutes <= minutesForToday)
+  
+  // Sort fitting topics: unassigned first, then smallest first (maximizes topics per day)
+  topicsThatFit.sort((a, b) => {
+    // Unassigned topics first (critical for coverage)
+    if (a.assignedCount === 0 && b.assignedCount > 0) return -1
+    if (b.assignedCount === 0 && a.assignedCount > 0) return 1
+    // Then smallest first (fits more topics per day)
+    return a.estimatedMinutes - b.estimatedMinutes
+  })
+  
+  // Single pass: assign topics that fit, prioritizing unassigned topics
   const selectedTopics = []
   let remainingMinutes = minutesForToday
   
-  // First pass: assign topics that fit perfectly
-  for (const topic of topicStats) {
+  for (const topic of topicsThatFit) {
     if (remainingMinutes <= 0) break
     
-    // Check if this topic fits
-    if (topic.estimatedMinutes <= remainingMinutes) {
+    if (remainingMinutes >= topic.estimatedMinutes) {
       selectedTopics.push({
         name: topic.name,
         estimatedMinutes: topic.estimatedMinutes,
@@ -326,45 +356,14 @@ function distributeTopicsForDay(subject, day, totalDays, availableMinutes = null
       })
       remainingMinutes -= topic.estimatedMinutes
       
-      // Track assignment
-      if (!tracker.assignedDays.has(topic.name)) {
-        tracker.assignedDays.set(topic.name, [])
-      }
-      tracker.assignedDays.get(topic.name).push(day)
+      // Track assignment (ensures even distribution across days)
+      trackTopicAssignment(tracker, topic.name, day)
     }
   }
   
-  // Second pass: if we have remaining time, try to fit smaller unassigned topics
-  if (remainingMinutes > 0 && selectedTopics.length < topicStats.length) {
-    const unassignedTopics = topicStats.filter(t => 
-      !selectedTopics.find(st => st.name === t.name) && 
-      t.estimatedMinutes <= remainingMinutes
-    )
-    
-    // Sort by size (smallest first) to maximize number of topics
-    unassignedTopics.sort((a, b) => a.estimatedMinutes - b.estimatedMinutes)
-    
-    for (const topic of unassignedTopics) {
-      if (remainingMinutes <= 0) break
-      selectedTopics.push({
-        name: topic.name,
-        estimatedMinutes: topic.estimatedMinutes,
-        pomodoroCount: topic.pomodoroCount || null,
-        timeType: topic.timeType || null
-      })
-      remainingMinutes -= topic.estimatedMinutes
-      
-      if (!tracker.assignedDays.has(topic.name)) {
-        tracker.assignedDays.set(topic.name, [])
-      }
-      tracker.assignedDays.get(topic.name).push(day)
-    }
-  }
-  
-  // Third pass: if no topics were assigned but we have materials, assign at least one
-  // This ensures topics are always shown, even if they exceed available time
+  // Fallback: if no topics fit but we have materials, assign smallest topic anyway
+  // This ensures students always see at least one topic, even if time estimates are off
   if (selectedTopics.length === 0 && topicStats.length > 0) {
-    // Find the smallest topic or the first unassigned one
     const smallestTopic = topicStats.reduce((min, topic) => 
       !min || topic.estimatedMinutes < min.estimatedMinutes ? topic : min
     )
@@ -376,14 +375,23 @@ function distributeTopicsForDay(subject, day, totalDays, availableMinutes = null
       timeType: smallestTopic.timeType || null
     })
     
-    // Track assignment
-    if (!tracker.assignedDays.has(smallestTopic.name)) {
-      tracker.assignedDays.set(smallestTopic.name, [])
-    }
-    tracker.assignedDays.get(smallestTopic.name).push(day)
+    trackTopicAssignment(tracker, smallestTopic.name, day)
   }
   
-  tracker.dayCounter++
-  
   return selectedTopics
+}
+
+/**
+ * Helper function to track topic assignments
+ * Avoids code duplication and ensures consistent tracking
+ * 
+ * @param {Object} tracker - Tracker object for this subject
+ * @param {string} topicName - Name of the topic being assigned
+ * @param {number} day - Day number the topic is assigned to
+ */
+function trackTopicAssignment(tracker, topicName, day) {
+  if (!tracker.assignedDays.has(topicName)) {
+    tracker.assignedDays.set(topicName, [])
+  }
+  tracker.assignedDays.get(topicName).push(day)
 }
